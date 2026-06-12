@@ -23,6 +23,7 @@ type NavContextType = {
 export type CircleView =
   | "list"
   | "create"
+  | "confidence"
   | "detail"
   | "settle"
   | "recap"

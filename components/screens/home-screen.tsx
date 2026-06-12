@@ -233,7 +233,7 @@ export function HomeScreen() {
               </span>
               <p className="mt-1 truncate text-sm font-bold">{activeCircle.name}</p>
               <p className="text-xs text-white/80">
-                ${fmt(circleTotal(activeCircle))} tracked · {activeCircle.members.length} friends
+                ${fmt(circleTotal(activeCircle))} tracked · {activeCircle.members.length} friends · Auto-settling
               </p>
             </div>
             <ChevronRight className="h-5 w-5 shrink-0 text-white/70" />

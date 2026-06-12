@@ -13,10 +13,9 @@ import { CircleScreen } from "./screens/circle-screen"
 function ScreenRouter() {
   const { screen, circleView } = useNav()
 
-  // Hide the bottom nav inside Circle sub-views (detail/create/settle/recap)
-  // since they have their own back navigation and full-width CTAs.
-  const showBottomNav =
-    screen !== "splash" && !(screen === "circle" && circleView !== "list")
+  // Hide bottom nav inside Circle sub-views (confidence/detail/create/settle/recap)
+  const circleSubView = screen === "circle" && circleView !== "list"
+  const showBottomNav = screen !== "splash" && !circleSubView
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-nets-page">
