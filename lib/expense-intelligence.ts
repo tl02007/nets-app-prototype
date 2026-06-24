@@ -55,6 +55,7 @@ export async function matchTransactionToCircle(
   userId: string
 ): Promise<TransactionMatch[]> {
   try {
+    if (!supabase) return []
     // Get user's active circles
     const { data: circles } = await supabase
       .from("circle_members")
@@ -140,6 +141,7 @@ export async function inferExpenseSplitParticipants(
   merchant: string
 ): Promise<string[]> {
   try {
+    if (!supabase) return []
     const { data: members } = await supabase
       .from("circle_members")
       .select("member_id")

@@ -24,8 +24,8 @@ export const supabase = hasSupabaseCredentials
         persistSession: false,
         storage: {
           getItem: async () => null,
-          setItem: async () => null,
-          removeItem: async () => null,
+          setItem: async () => {},
+          removeItem: async () => {},
         },
       },
     })

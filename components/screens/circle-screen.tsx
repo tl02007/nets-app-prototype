@@ -4,8 +4,8 @@ import { motion, AnimatePresence } from "motion/react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
   Plus, Users, ChevronRight, ChevronLeft, Check, Sparkles,
-  ArrowRight, UserPlus, Receipt, PartyPopper, Share2, Wallet,
-  Star, ShieldCheck, Lightbulb, TrendingDown, QrCode, CreditCard,
+  ArrowRight, UserPlus, Receipt, Wallet,
+  ShieldCheck, Lightbulb, TrendingDown, QrCode, CreditCard,
   Bell, Zap, X, Minus, Smartphone,
 } from "lucide-react"
 import { StatusBar } from "../status-bar"
@@ -14,8 +14,8 @@ import { useCircleData } from "../circle-data-context"
 import {
   circleTotal, perHead, computeSettlements, memberName,
   circleRecommendations, confidenceConfig, affordabilityMessage,
-  activities, computeConfidencePercent, confidenceLabel, confidenceColor,
-  type Circle, type CircleExpense, type ComfortProfile, type TripWalletTransaction, type Activity,
+  activities, computeConfidencePercent, confidenceLabel, confidenceColor, PROFILE_RANGES,
+  type Circle, type CircleExpense, type ComfortProfile, type Activity,
 } from "@/lib/nets-data"
 
 const fmt = (n: number) =>
@@ -31,7 +31,7 @@ const statusLabel: Record<Circle["status"], string> = {
 
 export function CircleScreen() {
   const { circleView, setCircleView, activeCircleId, openCircle } = useNav()
-  const { circles, createCircle, activateCircle, settleCircle, setCircleProfile, createWallet, addCircleExpense, deductWalletBalance } = useCircleData()
+  const { circles, createCircle, activateCircle, settleCircle, setCircleProfile, createWallet, addCircleExpense } = useCircleData()
   const [pendingCircleId, setPendingCircleId] = useState<string | null>(null)
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null)
 
@@ -111,9 +111,7 @@ export function CircleScreen() {
             onBack={() => setCircleView("list")}
             onSettle={() => setCircleView("settle")}
             onReconcile={() => setCircleView("reconcile")}
-            onRecap={() => setCircleView("recap")}
             onAddExpense={(expense, deduct) => addCircleExpense(circle.id, expense, deduct)}
-            onDeductWallet={(amount, txn) => deductWalletBalance(circle.id, amount, txn)}
           />
         )}
         {circleView === "settle" && (
@@ -123,7 +121,7 @@ export function CircleScreen() {
             onBack={() => setCircleView("detail")}
             onDone={() => {
               settleCircle(circle.id)
-              setCircleView("recap")
+              setCircleView("detail")
             }}
           />
         )}
@@ -134,16 +132,8 @@ export function CircleScreen() {
             onBack={() => setCircleView("detail")}
             onDone={() => {
               settleCircle(circle.id)
-              setCircleView("recap")
+              setCircleView("detail")
             }}
-          />
-        )}
-        {circleView === "recap" && (
-          <CircleRecap
-            key="recap"
-            circle={circle}
-            onBack={() => setCircleView("detail")}
-            onClose={() => setCircleView("list")}
           />
         )}
       </AnimatePresence>
@@ -160,6 +150,11 @@ function CircleList({ onOpen, onCreate, circles }: { onOpen: (id: string) => voi
         <StatusBar />
         <div className="px-5 pb-2 pt-1">
           <div className="flex items-center gap-2">
+            <img
+              src="/nets-circle-logo.jpg"
+              alt="NETS Circle"
+              className="h-11 w-11 shrink-0 object-contain mix-blend-multiply"
+            />
             <h1 className="text-xl font-extrabold text-nets-navy">NETS Circle</h1>
             <span className="rounded-full bg-nets-red/10 px-2 py-0.5 text-[10px] font-bold text-nets-red">NEW</span>
           </div>
@@ -368,24 +363,24 @@ const PROFILES: { id: ComfortProfile; title: string; range: string; desc: string
   {
     id: "easy-going",
     title: "Easy Going",
-    range: "$0 – $35 / person",
-    desc: "Hawker food, free parks, low-key hangouts. Comfort first.",
+    range: "$0 – $30 / person",
+    desc: "Prefers lower-cost outings. Soft stretch up to $45.",
     emoji: "😊",
     color: "var(--nets-green)",
   },
   {
     id: "balanced",
     title: "Balanced",
-    range: "$25 – $80 / person",
-    desc: "A mix of good food, some activities, occasional splurges.",
+    range: "$30 – $80 / person",
+    desc: "Comfortable with moderate-cost outings. Soft stretch up to $100.",
     emoji: "⚖️",
     color: "var(--nets-blue)",
   },
   {
     id: "experience-first",
     title: "Experience First",
-    range: "$60 – $150 / person",
-    desc: "Memorable, curated experiences. Quality is worth the cost.",
+    range: "$80 – $150 / person",
+    desc: "Willing to spend more for memorable experiences. Soft stretch up to $180.",
     emoji: "✨",
     color: "var(--nets-red)",
   },
@@ -495,10 +490,17 @@ function ExperienceMatchView({ circle, onBack, onSelect }: {
 }) {
   const profile = circle.comfortProfile ?? "balanced"
   const groupSize = circle.members.length
+  const interests = circle.interestTags ?? []
 
+  // Experience Match ranks by shared interests first, then Circle Confidence
+  // (concept doc: "shared interests, comfort profiles and NETS payment readiness").
   const scored = activities
-    .map((a) => ({ ...a, pct: computeConfidencePercent(a, profile, groupSize) }))
-    .sort((a, b) => b.pct - a.pct)
+    .map((a) => ({
+      ...a,
+      pct: computeConfidencePercent(a, profile, groupSize),
+      overlap: a.tags.filter((t) => interests.includes(t)).length,
+    }))
+    .sort((a, b) => b.overlap - a.overlap || b.pct - a.pct)
 
   return (
     <motion.div
@@ -546,8 +548,11 @@ function ExperienceMatchView({ circle, onBack, onSelect }: {
                 <p className="text-sm font-bold text-nets-navy">{a.name}</p>
                 <p className="text-xs text-muted-foreground">${a.costMin}–${a.costMax} / person</p>
                 <div className="mt-1.5 flex flex-wrap gap-1">
-                  {a.tripWalletSupported && (
+                  {a.tripWalletSupport === "full" && (
                     <span className="rounded-full bg-nets-blue/10 px-2 py-0.5 text-[10px] font-bold text-nets-blue">Wallet ✓</span>
+                  )}
+                  {a.tripWalletSupport === "partial" && (
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">Wallet partial</span>
                   )}
                   {a.crossBorder && (
                     <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">Cross-border</span>
@@ -632,26 +637,43 @@ function CircleConfidenceView({
 
   const color = confidenceColor(pct)
   const conf = confidenceConfig(confidenceLabel(pct))
-  const myMsg = affordabilityMessage(circle.myAffordabilitySignal)
 
+  // Private comfort check derived from the user's DECLARED comfort profile vs the
+  // selected activity — never transaction history (concept doc, page 10).
+  const range = PROFILE_RANGES[profile]
+  const recommendedRange = `$${range.min}–$${range.max} / person`
+  const activityMid = activity ? (activity.costMin + activity.costMax) / 2 : circle.estimatedCostPerPerson
+  const mySignal: Circle["myAffordabilitySignal"] =
+    activityMid <= range.max ? "within" : activityMid <= range.stretch ? "stretch" : "above"
+  const myMsg = affordabilityMessage(mySignal)
+
+  // "Why this scored" factors, phrased per the concept doc (pages 4–5).
   const factors = activity ? [
-    {
-      ok: activity.netsMerchantScore >= 70,
-      text: activity.netsMerchantScore >= 70
-        ? `${activity.netsMerchantScore}% NETS merchant coverage — no cash awkwardness`
-        : `${activity.netsMerchantScore}% NETS coverage — some cash may be needed`,
-    },
-    {
-      ok: activity.tripWalletSupported,
-      text: activity.tripWalletSupported
-        ? "Trip Wallet supported — pool funds, settle at the end"
-        : "Trip Wallet not available for this activity",
-    },
     {
       ok: pct >= 70,
       text: pct >= 70
-        ? "Activity cost fits your group's comfort profiles"
-        : "Some members may find the cost a stretch",
+        ? "Fits the Circle's comfort profile"
+        : "Above the Circle's comfort range",
+    },
+    {
+      ok: activity.netsMerchantScore >= 70,
+      text: activity.netsMerchantScore >= 70
+        ? "Strong NETS merchant coverage"
+        : "Limited NETS-supported merchants nearby",
+    },
+    {
+      ok: activity.tripWalletSupport === "full",
+      text: activity.tripWalletSupport === "full"
+        ? "Trip Wallet supported"
+        : activity.tripWalletSupport === "partial"
+        ? "Trip Wallet partially supported"
+        : "Trip Wallet not available",
+    },
+    {
+      ok: true, // both states are fine — cross-border ready, or local with no cross-border needed
+      text: activity.crossBorder
+        ? "Cross-border ready"
+        : "Local — no cross-border payment needed",
     },
   ] : []
 
@@ -710,7 +732,7 @@ function CircleConfidenceView({
           </motion.div>
         )}
 
-        {/* Private affordability */}
+        {/* Private comfort check — declared profile only, never transaction history */}
         <motion.div
           initial={{ y: 10, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -723,17 +745,20 @@ function CircleConfidenceView({
           </div>
           <p className="text-sm text-white/90 leading-relaxed">{myMsg}</p>
           <div className="mt-3 space-y-1.5">
-            {circle.costBreakdown.map((item) => (
-              <div key={item.label} className="flex justify-between text-xs">
-                <span className="text-white/65">{item.label}</span>
-                <span className="font-bold text-white">~${item.amount}</span>
-              </div>
-            ))}
-            <div className="border-t border-white/20 pt-2 flex justify-between">
-              <span className="text-xs font-bold text-white">Est. total</span>
-              <span className="text-sm font-extrabold text-white">~${circle.estimatedCostPerPerson}</span>
+            <div className="flex justify-between text-xs">
+              <span className="text-white/65">Your comfort range</span>
+              <span className="font-bold text-white">{recommendedRange}</span>
             </div>
+            {activity && (
+              <div className="flex justify-between text-xs">
+                <span className="text-white/65">This experience</span>
+                <span className="font-bold text-white">${activity.costMin}–${activity.costMax} / person</span>
+              </div>
+            )}
           </div>
+          <p className="mt-3 text-[10px] text-white/50 leading-relaxed">
+            Based on the comfort profile you selected. No individual financial data is shown to anyone.
+          </p>
         </motion.div>
 
         {/* Alternatives */}
@@ -874,45 +899,39 @@ function WalletSetupView({ circle, activity, onBack, onDone }: {
 
 // ─── Simulated detections ─────────────────────────────────────────────────────
 
+// The three documented detection scenarios (concept doc, pages 15–18):
+// a shared ride, a partial-group activity, and a personal purchase to reject.
 const SIMULATED_PAYMENTS = [
-  { id: "sim1", description: "Grab ride to venue", merchant: "Grab", amount: 35.00 },
-  { id: "sim2", description: "Arcade tokens", merchant: "Timezone", amount: 40.00 },
-  { id: "sim3", description: "Bubble tea run", merchant: "Gong Cha", amount: 22.50 },
+  { id: "sim-grab", label: "Simulate Grab $35", description: "Grab ride", merchant: "Grab", amount: 35.0, category: "Transport" },
+  { id: "sim-arcade", label: "Simulate Arcade $40", description: "Arcade tickets", merchant: "Arcade World", amount: 40.0, category: "Entertainment" },
+  { id: "sim-shopping", label: "Simulate Personal Shopping $25", description: "Personal item", merchant: "Uniqlo", amount: 25.0, category: "Shopping" },
 ]
 
 // ─── Circle Detail ────────────────────────────────────────────────────────────
 
 function CircleDetail({
-  circle, onBack, onSettle, onReconcile, onRecap, onAddExpense, onDeductWallet,
+  circle, onBack, onSettle, onReconcile, onAddExpense,
 }: {
   circle: Circle
   onBack: () => void
   onSettle: () => void
   onReconcile: () => void
-  onRecap: () => void
   onAddExpense: (expense: Omit<CircleExpense, "id">, deductFromWallet: boolean) => void
-  onDeductWallet: (amount: number, txn: Omit<TripWalletTransaction, "id">) => void
 }) {
   const total = circleTotal(circle)
   const share = perHead(circle)
   const conf = confidenceConfig(circle.circleConfidence)
   const wallet = circle.tripWallet
 
-  const [simIndex, setSimIndex] = useState(0)
   const [detection, setDetection] = useState<typeof SIMULATED_PAYMENTS[0] | null>(null)
   const [participantModal, setParticipantModal] = useState(false)
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([])
-
-  function triggerSimulation() {
-    setDetection(SIMULATED_PAYMENTS[simIndex % SIMULATED_PAYMENTS.length])
-    setSimIndex((i) => i + 1)
-  }
 
   function handleAddAll() {
     if (!detection) return
     const now = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" })
     onAddExpense(
-      { title: detection.description, merchant: detection.merchant, category: "Circle expense", amount: detection.amount, paidById: "alex", time: now },
+      { title: detection.description, merchant: detection.merchant, category: detection.category, amount: detection.amount, paidById: "alex", time: now },
       !!wallet
     )
     setDetection(null)
@@ -922,7 +941,7 @@ function CircleDetail({
     if (!detection || selectedParticipants.length === 0) return
     const now = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" })
     onAddExpense(
-      { title: `${detection.description} (${selectedParticipants.length} ppl)`, merchant: detection.merchant, category: "Circle expense", amount: detection.amount, paidById: "alex", time: now },
+      { title: `${detection.description} (${selectedParticipants.length} ppl)`, merchant: detection.merchant, category: detection.category, amount: detection.amount, paidById: "alex", time: now },
       !!wallet
     )
     setDetection(null)
@@ -1061,15 +1080,20 @@ function CircleDetail({
               <p className="text-xs font-bold text-amber-800">Circle-Aware Expense Recognition™</p>
             </div>
             <p className="text-xs text-amber-700 mb-3 leading-relaxed">
-              NETS detects payments and asks if they belong to this circle. Tap below to simulate.
+              During an active Circle, NETS recognises possible Circle-related payments and asks the payer before adding them. Tap to simulate.
             </p>
-            <button
-              onClick={triggerSimulation}
-              className="flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-bold text-white"
-            >
-              <Bell className="h-3.5 w-3.5" />
-              Simulate NETS Payment Detection
-            </button>
+            <div className="flex flex-col gap-2">
+              {SIMULATED_PAYMENTS.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setDetection(p)}
+                  className="flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-bold text-white active:opacity-80"
+                >
+                  <Bell className="h-3.5 w-3.5 shrink-0" />
+                  {p.label}
+                </button>
+              ))}
+            </div>
           </motion.div>
         )}
 
@@ -1116,12 +1140,9 @@ function CircleDetail({
       {/* Bottom CTA */}
       <div className="absolute inset-x-0 bottom-0 z-30 border-t border-border bg-card px-5 pb-8 pt-3">
         {circle.status === "settled" ? (
-          <button
-            onClick={onRecap}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-nets-navy py-4 text-base font-bold text-white"
-          >
-            <PartyPopper className="h-5 w-5" /> View Circle Recap
-          </button>
+          <div className="flex w-full items-center justify-center gap-2 rounded-2xl bg-nets-green/10 border border-nets-green/30 py-4 text-base font-bold text-nets-green">
+            <Check className="h-5 w-5" /> Circle settled — no chasing needed
+          </div>
         ) : circle.tripWallet ? (
           <button
             onClick={onReconcile}
@@ -1278,19 +1299,72 @@ function ReconcileView({ circle, onBack, onDone }: { circle: Circle; onBack: () 
   const settlements = computeSettlements(circle)
   const wallet = circle.tripWallet
   const total = circleTotal(circle)
-  const [reconciling, setReconciling] = useState(false)
+  const [step, setStep] = useState<Step>("idle")
   const [done, setDone] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [netsForm, setNetsForm] = useState<NetsFormData | null>(null)
+  const formRef = useRef<HTMLFormElement>(null)
 
   const walletSurplus = wallet ? wallet.balance : 0
   const surplusPerPerson = walletSurplus > 0 ? walletSurplus / circle.members.length : 0
-  const totalTransfer = settlements.reduce((s, t) => s + t.amount, 0)
+  const mySettlement = settlements.find((s) => s.fromId === "alex")
 
-  function handleReconcile() {
-    setReconciling(true)
-    setTimeout(() => {
+  useEffect(() => {
+    if (netsForm && formRef.current) {
+      setTimeout(() => formRef.current?.submit(), 100)
+    }
+  }, [netsForm])
+
+  const handleReconcile = async (paymentMode: string) => {
+    try {
+      setStep("paying")
+      setError(null)
+
+      const createRes = await fetch("/api/settlements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ circleId: circle.id, settlements }),
+      })
+      const createData = await createRes.json()
+      if (!createRes.ok) throw new Error(createData.error || "Failed to create settlements")
+
+      type SettlementRecord = { id: string; fromMemberId: string; toMemberId: string; amount: number }
+      const myRecord = (createData.settlements as SettlementRecord[]).find((s) => s.fromMemberId === "alex")
+
+      if (!myRecord) {
+        // Alex is a creditor or everyone is square — no payment needed from Alex
+        setDone(true)
+        setTimeout(onDone, 1600)
+        return
+      }
+
+      const payRes = await fetch("/api/settlements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settlementId: myRecord.id, amount: myRecord.amount, paymentMode }),
+      })
+      const payData = await payRes.json()
+      if (!payRes.ok) throw new Error(payData.error || "Failed to prepare payment")
+
+      // Optimistic balance deduction before redirecting to NETS gateway
+      // Single source of truth is the NETS callback (deducts once in Supabase).
+      // No optimistic write — it would double-deduct and is discarded on redirect.
+      setStep("redirecting")
+      setNetsForm(payData.paymentInitiation)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Payment failed")
+      setStep("idle")
+    }
+  }
+
+  const handleClickReconcile = () => {
+    if (mySettlement) {
+      setStep("select")
+    } else {
+      // Nothing for Alex to pay — just mark done
       setDone(true)
       setTimeout(onDone, 1600)
-    }, 2000)
+    }
   }
 
   return (
@@ -1300,6 +1374,14 @@ function ReconcileView({ circle, onBack, onDone }: { circle: Circle; onBack: () 
       exit={{ x: 40, opacity: 0 }}
       className="flex h-full flex-col"
     >
+      {netsForm && (
+        <form ref={formRef} method="POST" action={netsForm.gatewayUrl} style={{ display: "none" }}>
+          <input type="hidden" name="txnReq" value={netsForm.txnReq} />
+          <input type="hidden" name="mac" value={netsForm.mac} />
+          <input type="hidden" name="keyId" value={netsForm.keyId} />
+        </form>
+      )}
+
       <div className="bg-nets-page">
         <StatusBar />
         <Header title="Auto Reconciliation™" onBack={onBack} />
@@ -1354,7 +1436,7 @@ function ReconcileView({ circle, onBack, onDone }: { circle: Circle; onBack: () 
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.1 + i * 0.08 }}
-                  className="flex items-center gap-3 rounded-3xl bg-card p-4 shadow-sm"
+                  className={`flex items-center gap-3 rounded-3xl p-4 shadow-sm ${s.fromId === "alex" ? "bg-nets-red/5 border border-nets-red/20" : "bg-card"}`}
                 >
                   <span className="text-sm font-bold text-nets-navy">
                     {memberName(circle, s.fromId).replace(" (You)", "You")}
@@ -1373,6 +1455,11 @@ function ReconcileView({ circle, onBack, onDone }: { circle: Circle; onBack: () 
                 </motion.div>
               ))}
             </div>
+            {mySettlement && (
+              <p className="mt-3 text-center text-xs text-nets-red font-semibold">
+                Your share: ${fmt(mySettlement.amount)} — paid via eNETS
+              </p>
+            )}
           </>
         ) : (
           <div className="mt-5 rounded-3xl bg-nets-green/10 border border-nets-green/30 p-6 text-center">
@@ -1382,23 +1469,73 @@ function ReconcileView({ circle, onBack, onDone }: { circle: Circle; onBack: () 
           </div>
         )}
 
+        {error && <p className="mt-4 text-center text-sm font-semibold text-nets-red">{error}</p>}
+
         <p className="mt-5 text-center text-xs text-muted-foreground/60 px-4">
           NETS computes the minimum number of transfers so everyone settles with one tap.
         </p>
       </div>
 
       <div className="absolute inset-x-0 bottom-0 z-30 border-t border-border bg-card px-5 pb-8 pt-3">
-        <button
-          onClick={handleReconcile}
-          disabled={reconciling}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-nets-red py-4 text-base font-bold text-white shadow-lg shadow-nets-red/25 disabled:opacity-60"
-        >
-          {reconciling
-            ? <><Wallet className="h-5 w-5 animate-pulse" /> Processing…</>
-            : <><Zap className="h-5 w-5" /> Reconcile Now · ${fmt(totalTransfer)}</>
-          }
-        </button>
+        <AnimatePresence mode="wait">
+          {step === "paying" || step === "redirecting" ? (
+            <motion.div key="status" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center justify-center gap-2 py-4 text-base font-bold text-nets-navy">
+              <Wallet className="h-5 w-5 animate-pulse text-nets-red" />
+              {step === "paying" ? "Preparing payment…" : "Redirecting to NETS…"}
+            </motion.div>
+          ) : (
+            <motion.button
+              key="cta"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={handleClickReconcile}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-nets-red py-4 text-base font-bold text-white shadow-lg shadow-nets-red/25"
+            >
+              <Zap className="h-5 w-5" />
+              {mySettlement ? `Reconcile Now · $${fmt(mySettlement.amount)}` : "Confirm Reconciliation"}
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
+
+      {/* Payment method sheet */}
+      <AnimatePresence>
+        {step === "select" && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-40 bg-black/40" onClick={() => setStep("idle")} />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 30, stiffness: 300 }}
+              className="absolute inset-x-0 bottom-0 z-50 rounded-t-3xl bg-card px-5 pb-10 pt-4 shadow-2xl"
+            >
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-border" />
+              <p className="mb-1 text-center text-base font-bold text-nets-navy">Pay via eNETS</p>
+              <p className="mb-4 text-center text-xs text-muted-foreground">Settling ${fmt(mySettlement!.amount)}</p>
+              <div className="space-y-2">
+                {PAYMENT_METHODS.map((method) => (
+                  <button
+                    key={method.mode}
+                    onClick={() => handleReconcile(method.mode)}
+                    className="flex w-full items-center gap-3 rounded-2xl bg-nets-page p-3 active:opacity-70"
+                  >
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white" style={{ backgroundColor: method.color }}>
+                      <method.icon className="h-5 w-5" />
+                    </span>
+                    <div className="flex-1 text-left">
+                      <p className="text-sm font-bold text-nets-navy">{method.name}</p>
+                      <p className="text-xs text-muted-foreground">{method.desc}</p>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {done && (
@@ -1415,8 +1552,8 @@ function ReconcileView({ circle, onBack, onDone }: { circle: Circle; onBack: () 
             >
               <Check className="h-10 w-10" />
             </motion.span>
-            <p className="mt-4 text-lg font-extrabold">All reconciled!</p>
-            <p className="text-sm text-white/70">NETS settled everything automatically.</p>
+            <p className="mt-4 text-lg font-extrabold">Circle settled.</p>
+            <p className="text-sm text-white/70">No chasing needed.</p>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1437,7 +1574,6 @@ type Step = "idle" | "select" | "paying" | "redirecting"
 
 function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () => void; onDone: () => void }) {
   const settlements = computeSettlements(circle)
-  const { user, updateBalance } = useCircleData()
   const [step, setStep] = useState<Step>("idle")
   const [paid, setPaid] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -1480,7 +1616,10 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
       const payData = await payRes.json()
       if (!payRes.ok) throw new Error(payData.error || "Failed to prepare payment")
 
-      updateBalance(Math.max(0, user.balance - mySettlement.amount))
+      // No optimistic balance write here: the NETS callback is the single
+      // source of truth and deducts once in Supabase. Writing optimistically
+      // would double-deduct (callback reads the already-reduced balance), and
+      // the client state is discarded on the redirect anyway.
       setStep("redirecting")
       setNetsForm(payData.paymentInitiation)
     } catch (err) {
@@ -1622,8 +1761,8 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
             >
               <Check className="h-10 w-10" />
             </motion.span>
-            <p className="mt-4 text-lg font-extrabold">All settled up!</p>
-            <p className="text-sm text-white/70">Generating your Circle Recap…</p>
+            <p className="mt-4 text-lg font-extrabold">Circle settled.</p>
+            <p className="text-sm text-white/70">No chasing needed.</p>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1631,108 +1770,7 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
   )
 }
 
-// ─── Recap ────────────────────────────────────────────────────────────────────
-
-function CircleRecap({ circle, onBack, onClose }: { circle: Circle; onBack: () => void; onClose: () => void }) {
-  const total = circleTotal(circle)
-  const byCat = circle.expenses.reduce<Record<string, number>>((acc, e) => {
-    acc[e.category] = (acc[e.category] ?? 0) + e.amount
-    return acc
-  }, {})
-  const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1])
-  const catColors = ["var(--nets-red)", "var(--nets-navy)", "var(--nets-blue)", "var(--nets-green)"]
-  const topPayer = [...circle.members].sort((a, b) => b.paid - a.paid)[0]
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="flex h-full flex-col bg-nets-navy text-white"
-    >
-      <StatusBar dark />
-      <div className="flex items-center justify-between px-5 pb-2 pt-1">
-        <button onClick={onBack} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-        <button className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
-          <Share2 className="h-4 w-4" />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-5 pb-28">
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="flex flex-col items-center text-center"
-        >
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15">
-            <PartyPopper className="h-7 w-7 text-amber-300" />
-          </span>
-          <h1 className="mt-3 text-2xl font-extrabold">Circle Recap</h1>
-          <p className="text-sm text-white/70">{circle.name} · {circle.date}</p>
-        </motion.div>
-
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <Stat label="Total spent" value={`$${fmt(total)}`} />
-          <Stat label="Expenses tracked" value={`${circle.expenses.length} items`} />
-          <Stat label="Friends" value={`${circle.members.length} people`} />
-          <Stat label="Top contributor" value={topPayer.name.replace(" (You)", "You")} />
-        </div>
-
-        {cats.length > 0 && (
-          <>
-            <h2 className="mt-6 text-base font-bold">Where it went</h2>
-            <div className="mt-2 rounded-3xl bg-white/10 p-4">
-              {cats.map(([cat, amt], i) => {
-                const pct = total > 0 ? (amt / total) * 100 : 0
-                return (
-                  <div key={cat} className="mb-3 last:mb-0">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="font-semibold">{cat}</span>
-                      <span className="font-bold">${fmt(amt)}</span>
-                    </div>
-                    <div className="mt-1 h-2 overflow-hidden rounded-full bg-white/15">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${pct}%` }}
-                        transition={{ delay: 0.2 + i * 0.1, duration: 0.6 }}
-                        className="h-full rounded-full"
-                        style={{ backgroundColor: catColors[i % catColors.length] }}
-                      />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </>
-        )}
-
-        <div className="mt-4 flex items-center gap-3 rounded-3xl bg-white/10 p-4">
-          <Star className="h-6 w-6 shrink-0 text-amber-300" />
-          <p className="text-sm text-white/90">
-            A great outing — everyone's settled and the memories are yours to keep.
-          </p>
-        </div>
-      </div>
-
-      <div className="absolute inset-x-0 bottom-0 z-30 px-5 pb-8 pt-3">
-        <button onClick={onClose} className="w-full rounded-2xl bg-white py-4 text-base font-bold text-nets-navy">Done</button>
-      </div>
-    </motion.div>
-  )
-}
-
 // ─── Shared helpers ───────────────────────────────────────────────────────────
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl bg-white/10 p-4">
-      <p className="text-xs text-white/60">{label}</p>
-      <p className="mt-1 truncate text-lg font-extrabold">{value}</p>
-    </div>
-  )
-}
 
 function Header({ title, onBack }: { title: string; onBack: () => void }) {
   return (

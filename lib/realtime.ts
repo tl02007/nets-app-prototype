@@ -14,6 +14,7 @@ export function subscribeToCircleExpenses(
   circleId: string,
   callback: RealtimeCallback<any>
 ): SubscriptionUnsubscribe {
+  if (!supabase) return () => {}
   const channel = supabase
     .channel(`circle-expenses:${circleId}`)
     .on(
@@ -34,7 +35,7 @@ export function subscribeToCircleExpenses(
     .subscribe()
 
   return () => {
-    supabase.removeChannel(channel)
+    supabase!.removeChannel(channel)
   }
 }
 
@@ -45,6 +46,7 @@ export function subscribeToSettlements(
   circleId: string,
   callback: RealtimeCallback<any>
 ): SubscriptionUnsubscribe {
+  if (!supabase) return () => {}
   const channel = supabase
     .channel(`settlements:${circleId}`)
     .on(
@@ -65,7 +67,7 @@ export function subscribeToSettlements(
     .subscribe()
 
   return () => {
-    supabase.removeChannel(channel)
+    supabase!.removeChannel(channel)
   }
 }
 
@@ -76,6 +78,7 @@ export function subscribeToCircleMembers(
   circleId: string,
   callback: RealtimeCallback<any>
 ): SubscriptionUnsubscribe {
+  if (!supabase) return () => {}
   const channel = supabase
     .channel(`circle-members:${circleId}`)
     .on(
@@ -96,7 +99,7 @@ export function subscribeToCircleMembers(
     .subscribe()
 
   return () => {
-    supabase.removeChannel(channel)
+    supabase!.removeChannel(channel)
   }
 }
 
@@ -107,6 +110,7 @@ export function subscribeToPaymentLogs(
   settlementId: string,
   callback: RealtimeCallback<any>
 ): SubscriptionUnsubscribe {
+  if (!supabase) return () => {}
   const channel = supabase
     .channel(`payment-logs:${settlementId}`)
     .on(
@@ -127,7 +131,7 @@ export function subscribeToPaymentLogs(
     .subscribe()
 
   return () => {
-    supabase.removeChannel(channel)
+    supabase!.removeChannel(channel)
   }
 }
 

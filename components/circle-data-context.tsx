@@ -189,7 +189,25 @@ export function CircleDataProvider({ children }: { children: ReactNode }) {
         const rows = circleRes.data
         const members = memberRes.data ?? []
         const expenses = expenseRes.data ?? []
-        setCircles(rows.map((row) => normalizeCircleRow(row, members, expenses)))
+        // Supabase stores the live state (members, expenses, status, balances).
+        // Merge back only the non-persisted comfort metadata from the seed.
+        // Note: Trip Wallet is intentionally NOT merged onto pre-seeded circles —
+        // c1 uses the "fronted, settle via eNETS" model, and a pre-funded wallet
+        // would contradict that. The Trip Wallet is showcased via the new-circle
+        // creation flow instead.
+        const seedById = new Map(initialCircles.map((c) => [c.id, c]))
+        setCircles(
+          rows.map((row) => {
+            const circle = normalizeCircleRow(row, members, expenses)
+            const seed = seedById.get(circle.id)
+            if (!seed) return circle
+            return {
+              ...circle,
+              comfortProfile: circle.comfortProfile ?? seed.comfortProfile,
+              interestTags: circle.interestTags ?? seed.interestTags,
+            }
+          })
+        )
       }
 
       setLoading(false)

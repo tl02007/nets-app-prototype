@@ -17,6 +17,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (!supabase) {
+      return NextResponse.json({ error: "Database not configured" }, { status: 503 })
+    }
+
     // Get all transactions for the user (created in last 30 days)
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
@@ -89,6 +93,10 @@ export async function PUT(request: NextRequest) {
         { error: "transactionId, circleId, and paidById are required" },
         { status: 400 }
       )
+    }
+
+    if (!supabase) {
+      return NextResponse.json({ error: "Database not configured" }, { status: 503 })
     }
 
     // Get transaction details
