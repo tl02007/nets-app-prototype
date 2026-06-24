@@ -14,20 +14,34 @@ import {
   Settings,
   Bus,
 } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { AppHeader } from "../app-header"
 import { StatusBar } from "../status-bar"
 import { useNav } from "../nav-context"
-import { transactions, promos, user, circles, circleTotal } from "@/lib/nets-data"
+import { useCircleData } from "../circle-data-context"
+import { promos, circleTotal } from "@/lib/nets-data"
 
 const fmt = (n: number) =>
   n.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 export function HomeScreen() {
   const { go, openCircle } = useNav()
+  const { user, circles } = useCircleData()
   const [hidden, setHidden] = useState(false)
   const [promoIndex, setPromoIndex] = useState(0)
+  const [paymentResult, setPaymentResult] = useState<"success" | "failed" | "error" | null>(null)
   const activeCircle = circles.find((c) => c.status === "active")
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const params = new URLSearchParams(window.location.search)
+    const payment = params.get("payment")
+    if (payment === "success") setPaymentResult("success")
+    else if (payment === "failed") setPaymentResult("failed")
+    else if (payment === "error") setPaymentResult("error")
+    // Clean URL without reloading
+    if (payment) window.history.replaceState({}, "", window.location.pathname)
+  }, [])
 
   const bannerSlides = [
     {
@@ -70,6 +84,30 @@ export function HomeScreen() {
 
   return (
     <div className="flex h-full flex-col bg-[#f2f2f7]">
+      {paymentResult && (
+        <div
+          style={{
+            background: paymentResult === "success" ? "#d4edda" : "#f8d7da",
+            color: paymentResult === "success" ? "#155724" : "#721c24",
+            padding: "12px 16px",
+            fontSize: 14,
+            fontWeight: 600,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            zIndex: 50,
+          }}
+        >
+          <span>
+            {paymentResult === "success"
+              ? "Payment successful — balance updated"
+              : paymentResult === "failed"
+              ? "Payment was declined by NETS"
+              : "Payment error — please try again"}
+          </span>
+          <button onClick={() => setPaymentResult(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
+        </div>
+      )}
       {/* Header — white background like real NETS app */}
       <div className="bg-white">
         <StatusBar />

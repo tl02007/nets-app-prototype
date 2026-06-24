@@ -4,7 +4,7 @@ import { motion } from "motion/react"
 import { useState } from "react"
 import { ScanLine, QrCode, Zap, ImageIcon } from "lucide-react"
 import { StatusBar } from "../status-bar"
-import { user } from "@/lib/nets-data"
+import { useCircleData } from "../circle-data-context"
 
 function FakeQr() {
   // deterministic pseudo-random grid so it reads as a QR code
@@ -30,6 +30,7 @@ function FakeQr() {
 }
 
 export function PayScreen() {
+  const { user } = useCircleData()
   const [mode, setMode] = useState<"scan" | "show">("scan")
 
   return (

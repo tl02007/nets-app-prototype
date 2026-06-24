@@ -14,10 +14,11 @@ import {
 } from "lucide-react"
 import { StatusBar } from "../status-bar"
 import { useNav } from "../nav-context"
-import { user } from "@/lib/nets-data"
+import { useCircleData } from "../circle-data-context"
 
 export function ProfileScreen() {
   const { go } = useNav()
+  const { user } = useCircleData()
 
   const rows = [
     { icon: CreditCard, label: "Payment Methods", color: "#1a3a6b" },
