@@ -16,7 +16,7 @@ async function deductPayerBalance(settlementId: string) {
 
   const { data: settlement } = await supabase
     .from("settlements")
-    .select("from_member_id, amount, status")
+    .select("from_member_id, amount, status, circle_id")
     .eq("id", settlementId)
     .single()
 
@@ -37,6 +37,33 @@ async function deductPayerBalance(settlementId: string) {
 
     console.log(`[callback] Deducted $${settlement.amount} from ${settlement.from_member_id} — new balance: ${Math.max(0, payer.balance - settlement.amount)}`)
   }
+
+  // Mark the circle settled so re-entering it after the redirect shows the
+  // recap instead of prompting for payment again, and record the payment in the
+  // user's transaction history. Guarded by the pending-check above, so this runs
+  // at most once even if both B2S and S2S fire.
+  if (settlement.circle_id) {
+    const { data: circle } = await supabase
+      .from("circles")
+      .select("name")
+      .eq("id", settlement.circle_id)
+      .single()
+
+    await supabase.from("circles").update({ status: "settled" }).eq("id", settlement.circle_id)
+    console.log(`[callback] Marked circle ${settlement.circle_id} as settled`)
+
+    // Deterministic id → safe if the callback ever fires twice (upsert no-op).
+    await supabase.from("transactions").upsert({
+      id: `txn-settle-${settlementId}`,
+      merchant: `Circle: ${circle?.name ?? "Settlement"}`,
+      category: "Settlement",
+      amount: settlement.amount,
+      type: "out",
+      date: "Just now",
+      icon: "NC",
+      color: "var(--nets-red)",
+    })
+  }
 }
 
 /**
@@ -46,10 +73,10 @@ async function deductPayerBalance(settlementId: string) {
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const settlementId = params.id
+    const { id: settlementId } = await params
     const bodyText = await request.text()
     const macFromHeader = request.headers.get("hmac")
 
@@ -109,10 +136,10 @@ export async function POST(
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const settlementId = params.id
+    const { id: settlementId } = await params
     const searchParams = request.nextUrl.searchParams
 
     const mac = searchParams.get("mac")

@@ -14,7 +14,7 @@ import { CircleScreen } from "./screens/circle-screen"
 function ScreenRouter() {
   const { screen, circleView } = useNav()
 
-  // Hide bottom nav inside Circle sub-views (confidence/detail/create/settle/recap)
+  // Hide bottom nav inside Circle sub-views (comfort/experience/confidence/detail/create/settle/reconcile)
   const circleSubView = screen === "circle" && circleView !== "list"
   const showBottomNav = screen !== "splash" && !circleSubView
 

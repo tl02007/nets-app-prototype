@@ -3,7 +3,6 @@ import { supabase } from "@/lib/supabase"
 import {
   createNetsTransactionRequest,
   generateNetsMac,
-  getNetsGatewayUrl,
 } from "@/lib/nets-integration"
 
 const NETS_MERCHANT_ID = process.env.NETS_MERCHANT_ID || ""
@@ -157,12 +156,16 @@ async function prepareNetsPayment(settlementId: string, fallbackAmount?: number,
   // Create NETS transaction request
   const callbackBase = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/settlements/${settlementId}`
 
+  // Both callbacks point to the same route handler. NETS calls B2S as a browser
+  // GET redirect and S2S as a server POST, and the handler differentiates by HTTP
+  // method (GET = B2S, POST = S2S). There is no /b2s or /s2s subroute — adding one
+  // would 404 the callback and the payment would never reconcile.
   const txnReq = createNetsTransactionRequest({
     netsMid: NETS_MERCHANT_ID,
     merchantTxnRef: settlementId,
     txnAmount,
-    b2sTxnEndURL: `${callbackBase}/callback/b2s`,
-    s2sTxnEndURL: `${callbackBase}/callback/s2s`,
+    b2sTxnEndURL: `${callbackBase}/callback`,
+    s2sTxnEndURL: `${callbackBase}/callback`,
     paymentMode,
   })
 
@@ -172,6 +175,13 @@ async function prepareNetsPayment(settlementId: string, fallbackAmount?: number,
   // Extract keyId from NETS merchant ID (or use default)
   const keyId = NETS_MERCHANT_ID
 
+  // Gateway URL: defaults to the local simulated eNETS gateway so the full
+  // redirect → pay → MAC-signed callback → balance deduction flow works
+  // reliably for the prototype. Set NETS_GATEWAY_URL in .env.local to point at
+  // a real eNETS endpoint instead.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+  const gatewayUrl = process.env.NETS_GATEWAY_URL || `${appUrl}/api/mock-enets`
+
   return NextResponse.json({
     success: true,
     settlementId,
@@ -179,7 +189,7 @@ async function prepareNetsPayment(settlementId: string, fallbackAmount?: number,
       txnReq,
       mac,
       keyId,
-      gatewayUrl: getNetsGatewayUrl("sandbox"),
+      gatewayUrl,
       settlement: { id: settlementId, amount: txnAmount },
     },
   })

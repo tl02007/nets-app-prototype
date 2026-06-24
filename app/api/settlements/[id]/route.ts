@@ -7,10 +7,14 @@ import { supabase } from "@/lib/supabase"
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const settlementId = params.id
+    const { id: settlementId } = await params
+
+    if (!supabase) {
+      return NextResponse.json({ error: "Database not configured" }, { status: 503 })
+    }
 
     const { data: settlement } = await supabase
       .from("settlements")
