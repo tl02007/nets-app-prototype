@@ -62,6 +62,38 @@ export type CircleExpense = {
 // Circle Confidence is a group-level signal (no individual finances exposed)
 export type ConfidenceLevel = "high" | "moderate" | "low"
 
+export type ComfortProfile = "easy-going" | "balanced" | "experience-first"
+
+export type TripWalletTransaction = {
+  id: string
+  description: string
+  merchant: string
+  amount: number
+  time: string
+  splitWith: string[]
+}
+
+export type TripWallet = {
+  target: number
+  perPerson: number
+  balance: number
+  contributions: { memberId: string; contributed: boolean }[]
+  transactions: TripWalletTransaction[]
+}
+
+export type Activity = {
+  id: string
+  name: string
+  emoji: string
+  costMin: number
+  costMax: number
+  netsMerchantScore: number
+  tripWalletSupported: boolean
+  crossBorder: boolean
+  tags: string[]
+  description: string
+}
+
 export type Circle = {
   id: string
   name: string
@@ -80,6 +112,10 @@ export type Circle = {
   costBreakdown: { label: string; amount: number }[]
   // Smart Participation alternatives (shown when confidence is moderate/low)
   alternatives?: { title: string; description: string; saving: number; savingLabel: string }[]
+  // NETSCircle Final features
+  comfortProfile?: ComfortProfile
+  interestTags?: string[]
+  tripWallet?: TripWallet
 }
 
 const friends = {
@@ -107,6 +143,7 @@ export const circles: Circle[] = [
       { label: "Shopping", amount: 20 },
       { label: "Miscellaneous", amount: 5 },
     ],
+    comfortProfile: "balanced",
     members: [
       { ...friends.alex, paid: 86.0 },
       { ...friends.bryan, paid: 120.0 },
@@ -120,6 +157,22 @@ export const circles: Circle[] = [
       { id: "e4", title: "Bubble tea", merchant: "Tealive", category: "Food & Drink", amount: 34.0, paidById: "cheryl", time: "15:05" },
       { id: "e5", title: "Massage", merchant: "Thai Odyssey", category: "Wellness", amount: 38.0, paidById: "alex", time: "16:30" },
     ],
+    tripWallet: {
+      target: 320,
+      perPerson: 80,
+      balance: 152,
+      contributions: [
+        { memberId: "alex", contributed: true },
+        { memberId: "bryan", contributed: true },
+        { memberId: "cheryl", contributed: true },
+        { memberId: "dinesh", contributed: true },
+      ],
+      transactions: [
+        { id: "w1", description: "Petrol", merchant: "Caltex Woodlands", amount: 60, time: "08:15", splitWith: ["alex", "bryan", "cheryl", "dinesh"] },
+        { id: "w2", description: "Brunch", merchant: "Hailam Kopitiam JB", amount: 48, time: "10:40", splitWith: ["alex", "bryan", "cheryl", "dinesh"] },
+        { id: "w3", description: "Groceries", merchant: "AEON Tebrau", amount: 60, time: "13:20", splitWith: ["alex", "bryan", "cheryl", "dinesh"] },
+      ],
+    },
   },
   {
     id: "c2",
@@ -278,4 +331,175 @@ export function affordabilityMessage(signal: Circle["myAffordabilitySignal"]) {
   if (signal === "within") return "This activity falls within your typical weekend spending range."
   if (signal === "stretch") return "This activity is slightly above your usual spending pattern. You might want to budget ahead."
   return "This activity may significantly exceed your usual spending pattern."
+}
+
+// ─── Activity Database (Experience Match™) ───────────────────────────────────
+
+export const activities: Activity[] = [
+  {
+    id: "a1",
+    name: "JB Food Trail",
+    emoji: "🍜",
+    costMin: 30,
+    costMax: 60,
+    netsMerchantScore: 72,
+    tripWalletSupported: true,
+    crossBorder: true,
+    tags: ["Food", "Travel", "Adventure"],
+    description: "Day trip across the causeway for hawker food and desserts",
+  },
+  {
+    id: "a2",
+    name: "Café Hopping",
+    emoji: "☕",
+    costMin: 20,
+    costMax: 35,
+    netsMerchantScore: 88,
+    tripWalletSupported: true,
+    crossBorder: false,
+    tags: ["Food", "Chill"],
+    description: "Hit 3–4 IG-worthy cafés in Tiong Bahru or Dempsey",
+  },
+  {
+    id: "a3",
+    name: "Escape Room",
+    emoji: "🔐",
+    costMin: 35,
+    costMax: 55,
+    netsMerchantScore: 91,
+    tripWalletSupported: true,
+    crossBorder: false,
+    tags: ["Entertainment", "Adventure"],
+    description: "Team-based puzzle rooms across 3 venues in the city",
+  },
+  {
+    id: "a4",
+    name: "Night Safari + Eats",
+    emoji: "🦁",
+    costMin: 80,
+    costMax: 120,
+    netsMerchantScore: 96,
+    tripWalletSupported: true,
+    crossBorder: false,
+    tags: ["Entertainment", "Food", "Travel"],
+    description: "Night Safari admission + riverside dinner at Mandai",
+  },
+  {
+    id: "a5",
+    name: "Sentosa Beach Day",
+    emoji: "🏖️",
+    costMin: 50,
+    costMax: 90,
+    netsMerchantScore: 93,
+    tripWalletSupported: true,
+    crossBorder: false,
+    tags: ["Chill", "Adventure"],
+    description: "Siloso Beach, cable car, sunset at Tanjong Beach Club",
+  },
+  {
+    id: "a6",
+    name: "Pokémon GO Community",
+    emoji: "🎮",
+    costMin: 5,
+    costMax: 20,
+    netsMerchantScore: 38,
+    tripWalletSupported: false,
+    crossBorder: false,
+    tags: ["Entertainment", "Chill"],
+    description: "Monthly community day at Bishan Park or East Coast",
+  },
+  {
+    id: "a7",
+    name: "Hawker Supper Crawl",
+    emoji: "🍢",
+    costMin: 15,
+    costMax: 30,
+    netsMerchantScore: 35,
+    tripWalletSupported: false,
+    crossBorder: false,
+    tags: ["Food", "Nightlife"],
+    description: "Late-night tour of Singapore's best supper hawker spots",
+  },
+  {
+    id: "a8",
+    name: "Bowling + Arcade",
+    emoji: "🎳",
+    costMin: 30,
+    costMax: 50,
+    netsMerchantScore: 89,
+    tripWalletSupported: true,
+    crossBorder: false,
+    tags: ["Entertainment", "Sports"],
+    description: "Multiple lanes at Orchid Bowl + arcade credits at Timezone",
+  },
+  {
+    id: "a9",
+    name: "Art Exhibition + Hi-Tea",
+    emoji: "🎨",
+    costMin: 45,
+    costMax: 80,
+    netsMerchantScore: 94,
+    tripWalletSupported: true,
+    crossBorder: false,
+    tags: ["Entertainment", "Food", "Chill"],
+    description: "National Gallery + high tea at a heritage hotel",
+  },
+  {
+    id: "a10",
+    name: "Bukit Timah Hike",
+    emoji: "🌿",
+    costMin: 5,
+    costMax: 20,
+    netsMerchantScore: 18,
+    tripWalletSupported: false,
+    crossBorder: false,
+    tags: ["Adventure", "Sports", "Chill"],
+    description: "Summit hike + post-hike brunch at Beauty World hawkers",
+  },
+]
+
+// ─── Circle Confidence™ scoring ──────────────────────────────────────────────
+
+const PROFILE_RANGES: Record<ComfortProfile, { min: number; max: number }> = {
+  "easy-going": { min: 0, max: 35 },
+  "balanced": { min: 25, max: 80 },
+  "experience-first": { min: 60, max: 150 },
+}
+
+export function computeConfidencePercent(
+  activity: Activity,
+  profile: ComfortProfile,
+  groupSize: number
+): number {
+  const range = PROFILE_RANGES[profile]
+  const midCost = (activity.costMin + activity.costMax) / 2
+  let score = 78
+
+  if (midCost <= range.max) score += 14
+  else if (midCost <= range.max * 1.25) score -= 8
+  else score -= 22
+
+  if (midCost >= range.min) score += 3
+
+  if (activity.netsMerchantScore >= 85) score += 6
+  else if (activity.netsMerchantScore >= 60) score += 0
+  else score -= 14
+
+  if (activity.tripWalletSupported) score += 3
+  if (activity.crossBorder) score -= 4
+  if (groupSize >= 5) score -= 4
+
+  return Math.min(97, Math.max(32, score))
+}
+
+export function confidenceLabel(pct: number): ConfidenceLevel {
+  if (pct >= 75) return "high"
+  if (pct >= 50) return "moderate"
+  return "low"
+}
+
+export function confidenceColor(pct: number): string {
+  if (pct >= 75) return "var(--nets-green)"
+  if (pct >= 50) return "#d97706"
+  return "var(--nets-red)"
 }

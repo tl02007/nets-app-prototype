@@ -1,6 +1,7 @@
 "use client"
 
 import { AnimatePresence, motion } from "motion/react"
+import { CircleDataProvider } from "./circle-data-context"
 import { NavProvider, useNav } from "./nav-context"
 import { BottomNav } from "./bottom-nav"
 import { SplashScreen } from "./screens/splash-screen"
@@ -44,8 +45,10 @@ function ScreenRouter() {
 
 export function NetsApp() {
   return (
-    <NavProvider>
-      <ScreenRouter />
-    </NavProvider>
+    <CircleDataProvider>
+      <NavProvider>
+        <ScreenRouter />
+      </NavProvider>
+    </CircleDataProvider>
   )
 }

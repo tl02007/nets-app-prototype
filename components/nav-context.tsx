@@ -23,9 +23,13 @@ type NavContextType = {
 export type CircleView =
   | "list"
   | "create"
+  | "comfort"
+  | "experience"
   | "confidence"
+  | "wallet-setup"
   | "detail"
   | "settle"
+  | "reconcile"
   | "recap"
 
 const NavContext = createContext<NavContextType | null>(null)

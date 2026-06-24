@@ -4,7 +4,7 @@ import { motion } from "motion/react"
 import { useMemo, useState } from "react"
 import { ArrowDownLeft, ArrowUpRight, Search } from "lucide-react"
 import { StatusBar } from "../status-bar"
-import { transactions } from "@/lib/nets-data"
+import { useCircleData } from "../circle-data-context"
 
 const fmt = (n: number) =>
   n.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -13,10 +13,11 @@ type Filter = "all" | "out" | "in"
 
 export function HistoryScreen() {
   const [filter, setFilter] = useState<Filter>("all")
+  const { transactions } = useCircleData()
 
   const filtered = useMemo(
     () => (filter === "all" ? transactions : transactions.filter((t) => t.type === filter)),
-    [filter],
+    [filter, transactions],
   )
 
   const spent = transactions.filter((t) => t.type === "out").reduce((s, t) => s + t.amount, 0)
