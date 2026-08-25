@@ -8,6 +8,7 @@ import {
   ShieldCheck, Lightbulb, QrCode, CreditCard,
   Bell, Zap, X, Minus, Smartphone, Store,
   Star, AlertTriangle, Info, MapPin, Clock,
+  Download, FileText, Tag, PenLine,
 } from "lucide-react"
 import { StatusBar } from "../status-bar"
 import { useNav } from "../nav-context"
@@ -214,6 +215,37 @@ function SpendBandBadge({ band }: { band: SpendBand }) {
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${srcColor}`}>
       {srcIcon} {spendBandSourceLabel(band.source)}
     </span>
+  )
+}
+
+// Journey stage indicator — shows which of the 3 stages the user is in
+function JourneySteps({ active }: { active: 1 | 2 | 3 }) {
+  const steps = [
+    { n: 1, label: "Circle Check", sub: "Before" },
+    { n: 2, label: "Circle Pay", sub: "During" },
+    { n: 3, label: "Circle Close", sub: "After" },
+  ] as const
+  return (
+    <div className="mx-5 mb-4 flex items-center gap-0">
+      {steps.map((s, i) => {
+        const done = s.n < active
+        const current = s.n === active
+        return (
+          <div key={s.n} className="flex flex-1 items-center">
+            <div className="flex flex-col items-center gap-1 flex-1">
+              <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-extrabold transition-all ${done ? "bg-nets-green text-white" : current ? "bg-nets-navy text-white" : "bg-border text-muted-foreground"}`}>
+                {done ? <Check className="h-3.5 w-3.5" /> : s.n}
+              </div>
+              <p className={`text-[9px] font-bold text-center leading-tight ${current ? "text-nets-navy" : done ? "text-nets-green" : "text-muted-foreground"}`}>{s.label}</p>
+              <p className={`text-[8px] text-center ${current ? "text-nets-navy/60" : "text-muted-foreground/60"}`}>{s.sub}</p>
+            </div>
+            {i < steps.length - 1 && (
+              <div className={`h-px w-6 mb-6 ${done ? "bg-nets-green" : "bg-border"}`} />
+            )}
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -571,6 +603,7 @@ function PrivateCommitmentView({
       <div className="bg-nets-page">
         <StatusBar />
         <Header title="Your Commitment" onBack={onBack} subtitle="Private · Only you see this" />
+        <JourneySteps active={1} />
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2">
@@ -591,22 +624,64 @@ function PrivateCommitmentView({
             What are you comfortable committing?
           </p>
           <p className="text-6xl font-extrabold tracking-tight mt-3">
-            ${amount}
+            S${amount}
           </p>
           <p className="text-sm text-white/50 mt-1">per person</p>
-          <div className="mt-6 flex items-center justify-center gap-5">
+
+          {/* Range slider */}
+          <div className="mt-5 px-2">
+            <input
+              type="range"
+              min={min}
+              max={max}
+              step={step}
+              value={amount}
+              onChange={(e) => setAmount(Number(e.target.value))}
+              className="w-full accent-white h-2 rounded-full cursor-pointer"
+            />
+            <div className="flex justify-between text-[10px] text-white/40 mt-1">
+              <span>S${min}</span>
+              <span>S${max}</span>
+            </div>
+          </div>
+
+          {/* Comfort emoji indicator */}
+          <div className="mt-4 flex items-center justify-center gap-3">
+            {[
+              { emoji: "😄", label: "Very comfortable", threshold: 120 },
+              { emoji: "🙂", label: "Comfortable", threshold: 80 },
+              { emoji: "😐", label: "Okay", threshold: 50 },
+              { emoji: "😟", label: "A stretch", threshold: 20 },
+              { emoji: "😬", label: "Too much", threshold: 0 },
+            ].map((e) => {
+              const active = amount >= e.threshold
+              return (
+                <button
+                  key={e.emoji}
+                  onClick={() => setAmount(e.threshold + 10 <= max ? e.threshold + 10 : max)}
+                  className={`flex h-10 w-10 items-center justify-center rounded-full text-xl transition-all ${active && amount >= e.threshold && amount < e.threshold + 40 ? "bg-white/25 scale-125" : "bg-white/10 opacity-50"}`}
+                  title={e.label}
+                >
+                  {e.emoji}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Fine-tune +/- */}
+          <div className="mt-4 flex items-center justify-center gap-4">
             <button
               onClick={() => setAmount((a) => Math.max(min, a - step))}
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 active:bg-white/25"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 active:bg-white/25"
             >
-              <Minus className="h-5 w-5" />
+              <Minus className="h-4 w-4" />
             </button>
-            <span className="text-sm text-white/40">± $10</span>
+            <span className="text-xs text-white/40">fine tune ± $10</span>
             <button
               onClick={() => setAmount((a) => Math.min(max, a + step))}
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 active:bg-white/25"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 active:bg-white/25"
             >
-              <Plus className="h-5 w-5" />
+              <Plus className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -676,6 +751,7 @@ function ExperienceMatchView({ circle, onBack, onSelect }: {
       <div className="bg-nets-page">
         <StatusBar />
         <Header title="Choose an Experience" onBack={onBack} subtitle={`Group of ${groupSize + 1}`} />
+        <JourneySteps active={1} />
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pb-8 space-y-3">
@@ -855,6 +931,7 @@ function CircleCheckView({
       <div className="bg-nets-page">
         <StatusBar />
         <Header title="Circle Check" onBack={onBack} />
+        <JourneySteps active={1} />
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2">
@@ -1167,6 +1244,29 @@ function CircleDetail({
   const [participantModal, setParticipantModal] = useState(false)
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([])
 
+  // Manual expense entry state
+  const [manualEntryOpen, setManualEntryOpen] = useState(false)
+  const [manualTitle, setManualTitle] = useState("")
+  const [manualAmount, setManualAmount] = useState("")
+  const [manualCategory, setManualCategory] = useState("Food")
+  const [manualPaidBy, setManualPaidBy] = useState("alex")
+  const [manualSplit, setManualSplit] = useState<string[]>(circle.members.map((m) => m.id))
+
+  const EXPENSE_CATEGORIES = ["Food", "Transport", "Entertainment", "Shopping", "Accommodation", "Others"]
+
+  function handleManualAddExpense() {
+    if (!manualTitle.trim() || !manualAmount || parseFloat(manualAmount) <= 0) return
+    const now = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" })
+    onAddExpense(
+      { title: manualTitle, merchant: manualTitle, category: manualCategory, amount: parseFloat(manualAmount), paidById: manualPaidBy, participants: manualSplit, time: now },
+      !!wallet
+    )
+    setManualEntryOpen(false)
+    setManualTitle("")
+    setManualAmount("")
+    setManualCategory("Food")
+  }
+
   // Integrated mode: Merchant Push item assignment (concept doc §2.3)
   const [itemsVisible, setItemsVisible] = useState(false)
   const [myItems, setMyItems] = useState<string[]>(["mp1"]) // Alex's claimed items
@@ -1253,6 +1353,7 @@ function CircleDetail({
       </div>
 
       <div className="-mt-3 flex-1 overflow-y-auto rounded-t-3xl bg-nets-page px-5 pb-28 pt-5">
+        {circle.status === "active" && <JourneySteps active={2} />}
         {/* Trip Wallet */}
         {wallet && circle.status === "active" && (
           <motion.div initial={{ y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mb-4 overflow-hidden rounded-3xl bg-nets-navy">
@@ -1495,7 +1596,15 @@ function CircleDetail({
       </div>
 
       {/* Bottom CTA */}
-      <div className="absolute inset-x-0 bottom-0 z-30 border-t border-border bg-card px-5 pb-8 pt-3">
+      <div className="absolute inset-x-0 bottom-0 z-30 border-t border-border bg-card px-5 pb-8 pt-3 space-y-2">
+        {circle.status === "active" && (
+          <button
+            onClick={() => setManualEntryOpen(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-nets-navy/20 bg-nets-navy/5 py-3 text-sm font-bold text-nets-navy"
+          >
+            <PenLine className="h-4 w-4" /> Add Expense Manually
+          </button>
+        )}
         {circle.status === "settled" ? (
           <div className="flex w-full items-center justify-center gap-2 rounded-2xl bg-nets-green/10 border border-nets-green/30 py-4 text-base font-bold text-nets-green">
             <Check className="h-5 w-5" /> Circle settled — no chasing needed
@@ -1514,6 +1623,94 @@ function CircleDetail({
           </button>
         )}
       </div>
+
+      {/* Manual Expense Entry Sheet */}
+      <AnimatePresence>
+        {manualEntryOpen && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 z-40 bg-black/40" onClick={() => setManualEntryOpen(false)} />
+            <motion.div
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 28, stiffness: 280 }}
+              className="absolute inset-x-0 bottom-0 z-50 rounded-t-3xl bg-card px-5 pb-10 pt-4 shadow-2xl"
+            >
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-border" />
+              <p className="mb-4 text-base font-extrabold text-nets-navy">Add Expense</p>
+
+              <label className="text-xs font-bold text-nets-navy">What was it for?</label>
+              <input
+                value={manualTitle}
+                onChange={(e) => setManualTitle(e.target.value)}
+                placeholder="e.g. Bowling, Dinner, Grab ride"
+                className="mt-1.5 mb-3 w-full rounded-2xl border border-border bg-nets-page px-4 py-3 text-sm outline-none focus:border-nets-blue"
+              />
+
+              <label className="text-xs font-bold text-nets-navy">Amount (S$)</label>
+              <input
+                value={manualAmount}
+                onChange={(e) => setManualAmount(e.target.value)}
+                placeholder="0.00"
+                type="number"
+                inputMode="decimal"
+                className="mt-1.5 mb-3 w-full rounded-2xl border border-border bg-nets-page px-4 py-3 text-sm outline-none focus:border-nets-blue"
+              />
+
+              <label className="text-xs font-bold text-nets-navy">Category</label>
+              <div className="mt-1.5 mb-3 flex flex-wrap gap-2">
+                {EXPENSE_CATEGORIES.map((cat) => (
+                  <button key={cat} onClick={() => setManualCategory(cat)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${manualCategory === cat ? "bg-nets-navy text-white" : "bg-nets-page text-nets-navy border border-border"}`}>
+                    {cat}
+                  </button>
+                ))}
+              </div>
+
+              <label className="text-xs font-bold text-nets-navy">Paid by</label>
+              <div className="mt-1.5 mb-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+                {circle.members.map((m) => (
+                  <button key={m.id} onClick={() => setManualPaidBy(m.id)}
+                    className={`flex shrink-0 flex-col items-center gap-1 rounded-2xl border-2 px-3 py-2 transition-all ${manualPaidBy === m.id ? "border-nets-navy bg-nets-navy/5" : "border-border bg-nets-page"}`}>
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white" style={{ backgroundColor: m.color }}>{m.initial}</span>
+                    <span className="text-[10px] font-semibold text-nets-navy">{m.name.split(" ")[0]}</span>
+                  </button>
+                ))}
+              </div>
+
+              <label className="text-xs font-bold text-nets-navy">Split with</label>
+              <div className="mt-1.5 mb-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+                {circle.members.map((m) => {
+                  const on = manualSplit.includes(m.id)
+                  return (
+                    <button key={m.id}
+                      onClick={() => setManualSplit((s) => on ? s.filter((x) => x !== m.id) : [...s, m.id])}
+                      className={`flex shrink-0 flex-col items-center gap-1 rounded-2xl border-2 px-3 py-2 transition-all ${on ? "border-nets-red bg-nets-red/5" : "border-border bg-nets-page opacity-50"}`}>
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white" style={{ backgroundColor: m.color }}>{m.initial}</span>
+                      <span className="text-[10px] font-semibold text-nets-navy">{m.name.split(" ")[0]}</span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {manualAmount && parseFloat(manualAmount) > 0 && manualSplit.length > 0 && (
+                <div className="mb-3 rounded-xl bg-nets-navy/5 px-3 py-2 text-center">
+                  <p className="text-xs text-muted-foreground">
+                    S${fmt(parseFloat(manualAmount) / manualSplit.length)} per person · {manualSplit.length} splitting
+                  </p>
+                </div>
+              )}
+
+              <button
+                onClick={handleManualAddExpense}
+                disabled={!manualTitle.trim() || !manualAmount || parseFloat(manualAmount) <= 0 || manualSplit.length === 0}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-nets-red py-3.5 text-sm font-bold text-white shadow-lg shadow-nets-red/25 disabled:opacity-40"
+              >
+                <Receipt className="h-4 w-4" /> Add S${manualAmount ? fmt(parseFloat(manualAmount)) : "0.00"}
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Expense Detection Modal (concept doc §3.1: user controls what gets added) */}
       <AnimatePresence>
@@ -1708,6 +1905,7 @@ function ReconcileView({ circle, onBack, onDone }: { circle: Circle; onBack: () 
       <div className="bg-nets-page">
         <StatusBar />
         <Header title="Circle Close" onBack={onBack} subtitle="Settle everything. Chase nobody." />
+        <JourneySteps active={3} />
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2">
@@ -1835,13 +2033,38 @@ function ReconcileView({ circle, onBack, onDone }: { circle: Circle; onBack: () 
       <AnimatePresence>
         {done && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-nets-navy/95 text-white">
+            className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-nets-navy/95 text-white px-6">
             <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 220, damping: 14 }}
               className="flex h-20 w-20 items-center justify-center rounded-full bg-nets-green">
               <Check className="h-10 w-10" />
             </motion.span>
-            <p className="mt-4 text-lg font-extrabold">Circle Fully Settled.</p>
-            <p className="text-sm text-white/70">No chasing needed.</p>
+            <p className="mt-4 text-xl font-extrabold">All Settled!</p>
+            <p className="text-sm text-white/70 mt-1">Thanks everyone!</p>
+
+            {/* Summary card */}
+            <div className="mt-6 w-full rounded-3xl bg-white/10 p-5 space-y-3">
+              <p className="text-xs font-bold text-white/50 uppercase tracking-wide">Summary</p>
+              <div className="flex justify-between text-sm">
+                <span className="text-white/70">Total Spent</span>
+                <span className="font-extrabold text-white">S${fmt(total)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-white/70">Paid</span>
+                <span className="font-extrabold text-nets-green">S${fmt(total)}</span>
+              </div>
+              <div className="flex justify-between text-sm border-t border-white/10 pt-3">
+                <span className="text-white/70">Outstanding</span>
+                <span className="font-extrabold text-white">S$0.00</span>
+              </div>
+            </div>
+
+            <button
+              onClick={onDone}
+              className="mt-5 flex items-center gap-2 rounded-2xl bg-white/20 px-6 py-3 text-sm font-bold text-white"
+            >
+              <Download className="h-4 w-4" /> Download Summary
+            </button>
+            <p className="mt-3 text-xs text-white/40">More confident "YES" next time.</p>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1932,6 +2155,7 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
       <div className="bg-nets-page">
         <StatusBar />
         <Header title="Circle Close" onBack={onBack} subtitle="Universal settlement" />
+        <JourneySteps active={3} />
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2">
@@ -2038,13 +2262,38 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
       <AnimatePresence>
         {paid && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-nets-navy/95 text-white">
+            className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-nets-navy/95 text-white px-6">
             <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 220, damping: 14 }}
               className="flex h-20 w-20 items-center justify-center rounded-full bg-nets-green">
               <Check className="h-10 w-10" />
             </motion.span>
-            <p className="mt-4 text-lg font-extrabold">Circle Fully Settled.</p>
-            <p className="text-sm text-white/70">No chasing needed.</p>
+            <p className="mt-4 text-xl font-extrabold">All Settled!</p>
+            <p className="text-sm text-white/70 mt-1">Thanks everyone!</p>
+
+            {/* Summary card */}
+            <div className="mt-6 w-full rounded-3xl bg-white/10 p-5 space-y-3">
+              <p className="text-xs font-bold text-white/50 uppercase tracking-wide">Summary</p>
+              <div className="flex justify-between text-sm">
+                <span className="text-white/70">Total Spent</span>
+                <span className="font-extrabold text-white">S${fmt(circleTotal(circle))}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-white/70">Paid</span>
+                <span className="font-extrabold text-nets-green">S${fmt(circleTotal(circle))}</span>
+              </div>
+              <div className="flex justify-between text-sm border-t border-white/10 pt-3">
+                <span className="text-white/70">Outstanding</span>
+                <span className="font-extrabold text-white">S$0.00</span>
+              </div>
+            </div>
+
+            <button
+              onClick={onDone}
+              className="mt-5 flex items-center gap-2 rounded-2xl bg-white/20 px-6 py-3 text-sm font-bold text-white"
+            >
+              <Download className="h-4 w-4" /> Download Summary
+            </button>
+            <p className="mt-3 text-xs text-white/40">No spreadsheets. No chasing. Ever.</p>
           </motion.div>
         )}
       </AnimatePresence>
