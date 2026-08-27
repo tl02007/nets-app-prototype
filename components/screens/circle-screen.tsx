@@ -8,7 +8,7 @@ import {
   ShieldCheck, Lightbulb, QrCode, CreditCard,
   Bell, Zap, X, Minus, Smartphone, Store,
   Star, AlertTriangle, Info, MapPin, Clock,
-  Download, FileText, Tag, PenLine,
+  Download, FileText, Tag, PenLine, ScanLine,
 } from "lucide-react"
 import { StatusBar } from "../status-bar"
 import { useNav } from "../nav-context"
@@ -1244,6 +1244,60 @@ function CircleDetail({
   const [participantModal, setParticipantModal] = useState(false)
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([])
 
+  // ── NETS QR Scan-to-pay (Circle Pay → NETS Prepaid deduction) ──
+  type ScanStep = "scanning" | "detected" | "done"
+  const [scanQrOpen, setScanQrOpen] = useState(false)
+  const [scanStep, setScanStep] = useState<ScanStep>("scanning")
+  const [scanMerchant, setScanMerchant] = useState("")
+  const [scanAmount, setScanAmount] = useState("")
+  const [scanCategory, setScanCategory] = useState("Food")
+  const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const MOCK_QRS = [
+    { merchant: "Paradise Dynasty", amount: "23.50", category: "Food" },
+    { merchant: "Fun World Bowling", amount: "12.00", category: "Entertainment" },
+    { merchant: "7-Eleven", amount: "8.50", category: "Food" },
+    { merchant: "Grab (Ride)", amount: "14.00", category: "Transport" },
+    { merchant: "BreadTalk", amount: "6.00", category: "Food" },
+    { merchant: "Uniqlo", amount: "35.00", category: "Shopping" },
+  ]
+
+  function openQrScanner() {
+    const mock = MOCK_QRS[Math.floor(Math.random() * MOCK_QRS.length)]
+    setScanMerchant(mock.merchant)
+    setScanAmount(mock.amount)
+    setScanCategory(mock.category)
+    setScanStep("scanning")
+    setScanQrOpen(true)
+    scanTimerRef.current = setTimeout(() => setScanStep("detected"), 1800)
+  }
+
+  function closeQrScanner() {
+    if (scanTimerRef.current) clearTimeout(scanTimerRef.current)
+    setScanQrOpen(false)
+    setScanStep("scanning")
+  }
+
+  function handleQrPay() {
+    const amt = parseFloat(scanAmount)
+    if (!amt || amt <= 0) return
+    const now = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" })
+    // deductFromWallet=true → context deducts from NETS Prepaid wallet + records expense
+    onAddExpense(
+      {
+        title: `${scanMerchant} (NETS QR)`,
+        merchant: scanMerchant,
+        category: scanCategory,
+        amount: amt,
+        paidById: "alex",
+        time: now,
+      },
+      true
+    )
+    setScanStep("done")
+    scanTimerRef.current = setTimeout(closeQrScanner, 2200)
+  }
+
   // Manual expense entry state
   const [manualEntryOpen, setManualEntryOpen] = useState(false)
   const [manualTitle, setManualTitle] = useState("")
@@ -1598,12 +1652,29 @@ function CircleDetail({
       {/* Bottom CTA */}
       <div className="absolute inset-x-0 bottom-0 z-30 border-t border-border bg-card px-5 pb-8 pt-3 space-y-2">
         {circle.status === "active" && (
-          <button
-            onClick={() => setManualEntryOpen(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-nets-navy/20 bg-nets-navy/5 py-3 text-sm font-bold text-nets-navy"
-          >
-            <PenLine className="h-4 w-4" /> Add Expense Manually
-          </button>
+          wallet ? (
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={openQrScanner}
+                className="flex items-center justify-center gap-2 rounded-2xl bg-nets-red py-3 text-sm font-bold text-white shadow-sm shadow-nets-red/20"
+              >
+                <QrCode className="h-4 w-4" /> Scan NETS QR
+              </button>
+              <button
+                onClick={() => setManualEntryOpen(true)}
+                className="flex items-center justify-center gap-2 rounded-2xl border-2 border-nets-navy/20 bg-nets-navy/5 py-3 text-sm font-bold text-nets-navy"
+              >
+                <PenLine className="h-4 w-4" /> Add Manually
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setManualEntryOpen(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-nets-navy/20 bg-nets-navy/5 py-3 text-sm font-bold text-nets-navy"
+            >
+              <PenLine className="h-4 w-4" /> Add Expense Manually
+            </button>
+          )
         )}
         {circle.status === "settled" ? (
           <div className="flex w-full items-center justify-center gap-2 rounded-2xl bg-nets-green/10 border border-nets-green/30 py-4 text-base font-bold text-nets-green">
@@ -1756,6 +1827,147 @@ function CircleDetail({
                   </div>
                 </button>
               </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ── NETS QR Scan-to-Pay Sheet ── */}
+      <AnimatePresence>
+        {scanQrOpen && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 z-40 bg-black/50"
+              onClick={scanStep !== "done" ? closeQrScanner : undefined}
+            />
+            <motion.div
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 28, stiffness: 280 }}
+              className="absolute inset-x-0 bottom-0 z-50 rounded-t-3xl bg-nets-navy px-5 pb-10 pt-4 shadow-2xl"
+            >
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20" />
+
+              <AnimatePresence mode="wait">
+                {/* Step 1: Scanning animation */}
+                {scanStep === "scanning" && (
+                  <motion.div key="scanning" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className="flex flex-col items-center pb-4">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-white/50">Circle Pay · NETS Prepaid</p>
+                    <p className="mb-5 text-base font-extrabold text-white">Scanning NETS QR…</p>
+                    <div className="relative h-52 w-52 rounded-3xl border border-white/10 bg-black/30">
+                      {[
+                        "left-3 top-3 border-l-4 border-t-4 rounded-tl-xl",
+                        "right-3 top-3 border-r-4 border-t-4 rounded-tr-xl",
+                        "left-3 bottom-3 border-l-4 border-b-4 rounded-bl-xl",
+                        "right-3 bottom-3 border-r-4 border-b-4 rounded-br-xl",
+                      ].map((c, i) => (
+                        <span key={i} className={`absolute h-9 w-9 border-nets-red ${c}`} />
+                      ))}
+                      <motion.div
+                        animate={{ top: ["12%", "82%", "12%"] }}
+                        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                        className="absolute inset-x-6 h-0.5 rounded-full bg-nets-red shadow-[0_0_10px_2px_var(--nets-red)]"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <ScanLine className="h-10 w-10 text-white/15" />
+                      </div>
+                    </div>
+                    <p className="mt-4 text-center text-xs text-white/50">Align the merchant's NETS QR within the frame</p>
+                    <button onClick={closeQrScanner} className="mt-4 text-xs text-white/40 underline">Cancel</button>
+                  </motion.div>
+                )}
+
+                {/* Step 2: QR detected — confirm & pay */}
+                {scanStep === "detected" && (
+                  <motion.div key="detected" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    className="pb-2">
+                    <div className="mb-4 flex items-center gap-3 rounded-2xl bg-white/10 px-4 py-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-nets-red">
+                        <QrCode className="h-5 w-5 text-white" />
+                      </span>
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-white/50">NETS QR Detected</p>
+                        <p className="text-sm font-extrabold text-white">{scanMerchant}</p>
+                      </div>
+                      <Check className="ml-auto h-5 w-5 text-nets-green" />
+                    </div>
+
+                    <p className="mb-1.5 text-xs font-bold text-white/70">Amount (S$)</p>
+                    <div className="mb-3 flex items-center gap-3 rounded-2xl bg-white/10 px-4 py-3">
+                      <span className="text-base font-extrabold text-white/50">S$</span>
+                      <input
+                        value={scanAmount}
+                        onChange={(e) => setScanAmount(e.target.value)}
+                        type="number"
+                        inputMode="decimal"
+                        className="flex-1 bg-transparent text-xl font-extrabold text-white outline-none placeholder:text-white/20"
+                        placeholder="0.00"
+                      />
+                    </div>
+
+                    <p className="mb-1.5 text-xs font-bold text-white/70">Category</p>
+                    <div className="mb-4 flex flex-wrap gap-2">
+                      {["Food", "Transport", "Entertainment", "Shopping", "Others"].map((cat) => (
+                        <button key={cat} onClick={() => setScanCategory(cat)}
+                          className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${scanCategory === cat ? "bg-white text-nets-navy" : "bg-white/10 text-white/70"}`}>
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+
+                    {wallet && (
+                      <div className="mb-4 rounded-2xl bg-white/10 px-4 py-3">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-white/60">Circle Wallet balance</span>
+                          <span className="font-extrabold text-white">S${fmt(wallet.balance)}</span>
+                        </div>
+                        {scanAmount && parseFloat(scanAmount) > 0 && (
+                          <div className="mt-1.5 flex items-center justify-between text-xs">
+                            <span className="text-white/60">After this payment</span>
+                            <span className={`font-extrabold ${wallet.balance - parseFloat(scanAmount) >= 0 ? "text-nets-green" : "text-nets-red"}`}>
+                              S${fmt(Math.max(0, wallet.balance - parseFloat(scanAmount || "0")))}
+                            </span>
+                          </div>
+                        )}
+                        <div className="mt-2 flex items-center gap-1.5">
+                          <ShieldCheck className="h-3 w-3 text-white/40 shrink-0" />
+                          <p className="text-[10px] text-white/40">Deducted from NETS Prepaid Circle wallet</p>
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleQrPay}
+                      disabled={!scanAmount || parseFloat(scanAmount) <= 0}
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl bg-nets-red py-4 text-base font-bold text-white shadow-lg shadow-nets-red/30 disabled:opacity-40"
+                    >
+                      <Wallet className="h-5 w-5" />
+                      Pay S${scanAmount ? fmt(parseFloat(scanAmount)) : "0.00"} · Circle Wallet
+                    </button>
+                    <button onClick={closeQrScanner} className="mt-2 flex w-full items-center justify-center py-2 text-xs text-white/40 underline">
+                      Cancel
+                    </button>
+                  </motion.div>
+                )}
+
+                {/* Step 3: Success */}
+                {scanStep === "done" && (
+                  <motion.div key="done" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+                    className="flex flex-col items-center pb-4">
+                    <motion.span
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: "spring", stiffness: 220, damping: 14 }}
+                      className="flex h-20 w-20 items-center justify-center rounded-full bg-nets-green"
+                    >
+                      <Check className="h-10 w-10 text-white" />
+                    </motion.span>
+                    <p className="mt-4 text-xl font-extrabold text-white">Payment Done!</p>
+                    <p className="mt-1 text-sm text-white/60">S${fmt(parseFloat(scanAmount || "0"))} · {scanMerchant}</p>
+                    <p className="mt-3 text-xs text-white/40">Deducted from Circle Wallet · Added to shared expenses</p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           </>
         )}
