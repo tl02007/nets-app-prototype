@@ -134,6 +134,31 @@ export type TripWallet = {
 
 export type WalletSupport = "full" | "partial" | "none"
 
+// ─── Collaborative Idea Submission + Voting (concept doc §1.7) ───────────────
+
+export type IdeaVoteScore = 1 | 2 | 3  // 1 = Not for me, 2 = Could work, 3 = Love it!
+
+export type IdeaVote = {
+  memberId: string
+  score: IdeaVoteScore
+}
+
+export type CircleIdea = {
+  id: string
+  submittedById: string
+  title: string
+  category: string
+  description?: string
+  estimatedMin: number
+  estimatedMax: number
+  reviewScore: number    // out of 5.0
+  reviewCount: number
+  isCircleReady: boolean
+  circleReadyDiscount?: number  // % discount if Circle-Ready
+  netsMerchantScore: number     // 0–100 NETS acceptance score
+  votes: IdeaVote[]
+}
+
 // ─── Activity (enriched with Spend Band metadata) ────────────────────────────
 
 export type Activity = {

@@ -22,6 +22,7 @@ import {
   spendBandSourceLabel, spendBandSourceNote, privateCommitmentGuidance,
   type Circle, type CircleExpense, type ComfortProfile, type Activity,
   type CircleCheckOutcome, type SpendBand, type NegotiationOption, type CircleReadyOffer,
+  type CircleIdea, type IdeaVoteScore,
 } from "@/lib/nets-data"
 
 const fmt = (n: number) =>
@@ -40,6 +41,10 @@ export function CircleScreen() {
   const { circles, createCircle, activateCircle, settleCircle, setCircleProfile, createWallet, addCircleExpense } = useCircleData()
   const [pendingCircleId, setPendingCircleId] = useState<string | null>(null)
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null)
+  // V2: custom activity built from a CircleIdea (used when user picks via the new idea flow)
+  const [customActivity, setCustomActivity] = useState<Activity | undefined>(undefined)
+  // V2: ideas collected across the 3-step idea flow
+  const [pendingIdeas, setPendingIdeas] = useState<CircleIdea[]>([])
   // Private commitment amount — stored locally, never sent to other members (concept doc §1.3)
   const [myCommitment, setMyCommitment] = useState(50)
 
@@ -48,7 +53,7 @@ export function CircleScreen() {
     [activeCircleId, circles]
   )
   const pendingCircle = pendingCircleId ? circles.find((c) => c.id === pendingCircleId) : null
-  const selectedActivity = selectedActivityId ? activities.find((a) => a.id === selectedActivityId) : undefined
+  const selectedActivity = customActivity ?? (selectedActivityId ? activities.find((a) => a.id === selectedActivityId) : undefined)
 
   // Normalise legacy view names to V2 names
   const resolvedView =
@@ -83,21 +88,47 @@ export function CircleScreen() {
             onBack={() => setCircleView("create")}
             onDone={(amount) => {
               setMyCommitment(amount)
-              // Store profile for backward-compat with experience matching algorithm
               setCircleProfile(pendingCircle.id, "balanced", ["Food", "Travel"])
-              setCircleView("experience")
+              // V2 flow: commitment → collaborative idea submission (concept doc §1.7)
+              setCircleView("idea-submission")
             }}
           />
         )}
-        {/* Experience Match with Spend Band metadata (concept doc §1.2) */}
-        {resolvedView === "experience" && pendingCircle && (
-          <ExperienceMatchView
-            key="experience"
+        {/* V2: Collaborative idea submission — each member pitches one idea */}
+        {resolvedView === "idea-submission" && pendingCircle && (
+          <IdeaSubmissionView
+            key="idea-submission"
             circle={pendingCircle}
             onBack={() => setCircleView("commitment")}
-            onSelect={(activityId) => {
-              setSelectedActivityId(activityId)
-              // V2 flow: experience → Circle Check outcome (concept doc §1.4)
+            onDone={(ideas) => {
+              setPendingIdeas(ideas)
+              setCircleView("idea-voting")
+            }}
+          />
+        )}
+        {/* V2: Idea voting — members vote on all submitted ideas */}
+        {resolvedView === "idea-voting" && pendingCircle && (
+          <IdeaVotingView
+            key="idea-voting"
+            ideas={pendingIdeas}
+            myMemberId="alex"
+            onBack={() => setCircleView("idea-submission")}
+            onDone={(votedIdeas) => {
+              setPendingIdeas(votedIdeas)
+              setCircleView("ai-ranking")
+            }}
+          />
+        )}
+        {/* V2: AI ranking — engine ranks ideas, user picks winner */}
+        {resolvedView === "ai-ranking" && pendingCircle && (
+          <AIRankingView
+            key="ai-ranking"
+            ideas={pendingIdeas}
+            myCommitment={myCommitment}
+            circle={pendingCircle}
+            onBack={() => setCircleView("idea-voting")}
+            onSelect={(idea) => {
+              setCustomActivity(ideaToActivity(idea))
               setCircleView("check")
             }}
           />
@@ -109,7 +140,7 @@ export function CircleScreen() {
             circle={pendingCircle}
             activity={selectedActivity}
             myCommitment={myCommitment}
-            onBack={() => setCircleView("experience")}
+            onBack={() => setCircleView("ai-ranking")}
             onProceed={() => setCircleView("wallet-setup")}
           />
         )}
@@ -123,6 +154,8 @@ export function CircleScreen() {
               activateCircle(pendingCircle.id, false)
               setPendingCircleId(null)
               setSelectedActivityId(null)
+              setCustomActivity(undefined)
+              setPendingIdeas([])
               openCircle(pendingCircle.id)
             }}
             onDone={(target, perPerson) => {
@@ -130,6 +163,8 @@ export function CircleScreen() {
               activateCircle(pendingCircle.id, true)
               setPendingCircleId(null)
               setSelectedActivityId(null)
+              setCustomActivity(undefined)
+              setPendingIdeas([])
               openCircle(pendingCircle.id)
             }}
           />
@@ -2509,6 +2544,653 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
           </motion.div>
         )}
       </AnimatePresence>
+    </motion.div>
+  )
+}
+
+// ─── Helpers for the idea flow ────────────────────────────────────────────────
+
+const CATEGORY_EMOJI: Record<string, string> = {
+  Food: "🍽️",
+  Activity: "🎯",
+  Entertainment: "🎭",
+  Shopping: "🛍️",
+  Transport: "🚗",
+  Sports: "⚽",
+  Outdoors: "🌿",
+  "Food & Drinks": "🍽️",
+}
+
+function ideaToActivity(idea: CircleIdea): Activity {
+  return {
+    id: idea.id,
+    name: idea.title,
+    emoji: CATEGORY_EMOJI[idea.category] ?? "✨",
+    category: idea.category,
+    costMin: idea.estimatedMin,
+    costMax: idea.estimatedMax,
+    crossBorder: false,
+    spendBand: {
+      min: idea.estimatedMin,
+      max: idea.estimatedMax,
+      source: "nets-insights",
+      lastUpdated: "Just now",
+      confidenceLevel: idea.reviewScore >= 4.2 ? "high" : "moderate",
+    },
+    netsMerchantScore: idea.netsMerchantScore,
+    merchantCount: Math.max(1, Math.round(idea.reviewCount / 120)),
+    tripWalletSupport: idea.netsMerchantScore >= 80 ? "full" : "partial",
+    suggestedWallet: Math.round((idea.estimatedMin + idea.estimatedMax) / 2),
+    confidence: Math.round((idea.reviewScore / 5) * 100),
+    tags: [idea.category],
+    description: idea.description ?? idea.title,
+  }
+}
+
+const MOCK_ENRICHMENT: Record<string, Omit<CircleIdea, "id" | "submittedById" | "votes">> = {
+  "korean bbq": {
+    title: "Korean BBQ", category: "Food", description: "Gen Korean BBQ House · Bugis+",
+    estimatedMin: 35, estimatedMax: 55, reviewScore: 4.3, reviewCount: 1247,
+    isCircleReady: true, circleReadyDiscount: 10, netsMerchantScore: 88,
+  },
+  bowling: {
+    title: "Bowling", category: "Activity", description: "Orchid Bowl · Leisure Park Kallang",
+    estimatedMin: 18, estimatedMax: 30, reviewScore: 4.1, reviewCount: 342,
+    isCircleReady: false, netsMerchantScore: 90,
+  },
+  "escape room": {
+    title: "Escape Room", category: "Activity", description: "Lost SG · 60-min group challenge",
+    estimatedMin: 28, estimatedMax: 45, reviewScore: 4.5, reviewCount: 891,
+    isCircleReady: false, netsMerchantScore: 82,
+  },
+  haidilao: {
+    title: "Haidilao Hot Pot", category: "Food", description: "Bugis+ Level 4",
+    estimatedMin: 40, estimatedMax: 65, reviewScore: 4.4, reviewCount: 2103,
+    isCircleReady: true, circleReadyDiscount: 8, netsMerchantScore: 92,
+  },
+  "cafe hopping": {
+    title: "Café Hopping", category: "Food & Drinks", description: "Instagrammable cafés around Haji Lane",
+    estimatedMin: 25, estimatedMax: 40, reviewScore: 4.2, reviewCount: 523,
+    isCircleReady: true, circleReadyDiscount: 5, netsMerchantScore: 78,
+  },
+  "laser tag": {
+    title: "Laser Tag", category: "Activity", description: "Battle Box · Funan Mall",
+    estimatedMin: 20, estimatedMax: 32, reviewScore: 4.0, reviewCount: 198,
+    isCircleReady: false, netsMerchantScore: 85,
+  },
+}
+
+function fuzzyEnrich(title: string): Omit<CircleIdea, "id" | "submittedById" | "votes"> {
+  const key = Object.keys(MOCK_ENRICHMENT).find((k) => title.toLowerCase().includes(k))
+  if (key) return MOCK_ENRICHMENT[key]
+  return {
+    title, category: "Activity", description: title,
+    estimatedMin: 25, estimatedMax: 45, reviewScore: 3.9, reviewCount: 112,
+    isCircleReady: false, netsMerchantScore: 75,
+  }
+}
+
+const MOCK_MEMBER_IDEA_TITLES = ["Korean BBQ", "Escape Room", "Haidilao", "Bowling", "Café Hopping", "Laser Tag"]
+
+function buildMockMemberIdeas(members: Circle["members"]): CircleIdea[] {
+  return members
+    .filter((m) => m.id !== "alex")
+    .map((m, i) => ({
+      id: `idea-${m.id}`,
+      submittedById: m.id,
+      votes: [],
+      ...fuzzyEnrich(MOCK_MEMBER_IDEA_TITLES[i % MOCK_MEMBER_IDEA_TITLES.length]),
+    }))
+}
+
+function computeIdeaScore(
+  idea: CircleIdea,
+  memberCommitments: number[]
+): { aiScore: number; budgetFitPct: number; popularityScore: number; qualityScore: number } {
+  const inRange = memberCommitments.filter(
+    (c) => c >= idea.estimatedMin * 0.85 && c <= idea.estimatedMax * 1.2
+  ).length
+  const budgetFitPct = memberCommitments.length > 0
+    ? Math.round((inRange / memberCommitments.length) * 100) : 60
+
+  const avgVote = idea.votes.length > 0
+    ? idea.votes.reduce((s, v) => s + v.score, 0) / idea.votes.length : 2
+  const popularityScore = Math.round(((avgVote - 1) / 2) * 100)
+  const qualityScore = Math.round(((idea.reviewScore - 1) / 4) * 100)
+  const netsBonus = idea.isCircleReady ? 12 : 0
+
+  const aiScore = Math.min(99, Math.round(
+    budgetFitPct * 0.35 +
+    popularityScore * 0.30 +
+    qualityScore * 0.20 +
+    idea.netsMerchantScore * 0.15 +
+    netsBonus
+  ))
+
+  return { aiScore, budgetFitPct, popularityScore, qualityScore }
+}
+
+// ─── IdeaSubmissionView ───────────────────────────────────────────────────────
+
+const CATEGORIES = ["Food", "Activity", "Entertainment", "Shopping", "Outdoors", "Food & Drinks"]
+
+function IdeaSubmissionView({
+  circle,
+  onBack,
+  onDone,
+}: {
+  circle: Circle
+  onBack: () => void
+  onDone: (ideas: CircleIdea[]) => void
+}) {
+  const [myTitle, setMyTitle] = useState("")
+  const [myCategory, setMyCategory] = useState("Food")
+  const [submitted, setSubmitted] = useState(false)
+  const [arrivedCount, setArrivedCount] = useState(0)
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+
+  const mockMemberIdeas = useMemo(() => buildMockMemberIdeas(circle.members), [circle.members])
+  const allArrived = arrivedCount >= mockMemberIdeas.length
+
+  useEffect(() => {
+    if (!submitted) return
+    timersRef.current = mockMemberIdeas.map((_, i) =>
+      setTimeout(() => setArrivedCount(i + 1), 900 + i * 1100)
+    )
+    return () => { timersRef.current.forEach(clearTimeout) }
+  }, [submitted, mockMemberIdeas])
+
+  function handleSubmit() {
+    if (!myTitle.trim()) return
+    setSubmitted(true)
+  }
+
+  function handleProceed() {
+    const myIdea: CircleIdea = {
+      id: "idea-alex",
+      submittedById: "alex",
+      votes: [],
+      ...fuzzyEnrich(myTitle),
+      title: myTitle.trim(),
+      category: myCategory,
+    }
+    onDone([myIdea, ...mockMemberIdeas.slice(0, arrivedCount)])
+  }
+
+  const otherMembers = circle.members.filter((m) => m.id !== "alex")
+
+  return (
+    <motion.div initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -40, opacity: 0 }}
+      className="flex h-full flex-col bg-nets-page">
+      <StatusBar />
+      <Header title="Share Your Idea" onBack={onBack} subtitle="Step 1 of 3" />
+      <JourneySteps active={1} />
+
+      <div className="flex-1 overflow-y-auto px-5 pb-28 pt-3 space-y-4">
+        <div className="flex items-start gap-2.5 rounded-2xl bg-nets-blue/10 border border-nets-blue/20 px-4 py-3">
+          <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-nets-blue" />
+          <p className="text-xs text-nets-blue leading-relaxed">
+            Your idea is <strong>private</strong> until everyone submits. No anchoring bias — everyone thinks independently.
+          </p>
+        </div>
+
+        {!submitted ? (
+          <>
+            <div className="rounded-3xl bg-white p-5 shadow-sm space-y-4">
+              <p className="text-sm font-bold text-nets-navy">
+                What&apos;s your idea for <span className="text-nets-red">{circle.name}</span>?
+              </p>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Your Idea</label>
+                <input
+                  value={myTitle}
+                  onChange={(e) => setMyTitle(e.target.value)}
+                  placeholder="e.g. Korean BBQ, Bowling, Escape Room…"
+                  className="w-full rounded-2xl border border-border bg-nets-page px-4 py-3 text-sm font-semibold text-nets-navy placeholder:text-muted-foreground/60 focus:border-nets-red focus:outline-none"
+                  maxLength={60}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Category</label>
+                <div className="flex flex-wrap gap-2">
+                  {CATEGORIES.map((cat) => (
+                    <button key={cat} onClick={() => setMyCategory(cat)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                        myCategory === cat
+                          ? "bg-nets-red text-white"
+                          : "bg-nets-page border border-border text-nets-navy"
+                      }`}>
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl bg-white p-5 shadow-sm">
+              <p className="mb-3 text-xs font-bold text-muted-foreground uppercase tracking-wide">Waiting for ideas from</p>
+              <div className="space-y-2.5">
+                {otherMembers.map((m) => (
+                  <div key={m.id} className="flex items-center gap-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-extrabold text-white"
+                      style={{ backgroundColor: m.color }}>
+                      {m.initial}
+                    </span>
+                    <span className="flex-1 text-sm font-semibold text-nets-navy">{m.name}</span>
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">Thinking…</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="rounded-3xl bg-nets-navy p-5 text-white shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-white/60 uppercase tracking-wide">Your idea</span>
+                <span className="flex items-center gap-1 rounded-full bg-nets-green/20 px-2 py-0.5 text-xs font-bold text-nets-green">
+                  <Check className="h-3 w-3" /> Submitted
+                </span>
+              </div>
+              <p className="text-lg font-extrabold">{myTitle}</p>
+              <p className="text-xs text-white/50 mt-0.5">{myCategory}</p>
+            </div>
+
+            <div className="rounded-3xl bg-white p-5 shadow-sm">
+              <p className="mb-3 text-xs font-bold text-muted-foreground uppercase tracking-wide">
+                Ideas coming in… ({arrivedCount}/{mockMemberIdeas.length})
+              </p>
+              <div className="space-y-2.5">
+                {mockMemberIdeas.map((idea, i) => {
+                  const member = circle.members.find((m) => m.id === idea.submittedById)
+                  const arrived = i < arrivedCount
+                  return (
+                    <motion.div key={idea.id}
+                      initial={arrived ? { opacity: 0, y: 8 } : false}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-extrabold text-white"
+                        style={{ backgroundColor: member?.color ?? "var(--nets-navy)" }}>
+                        {member?.initial ?? "?"}
+                      </span>
+                      <span className="flex-1 text-sm font-semibold text-nets-navy">{member?.name}</span>
+                      {arrived ? (
+                        <span className="flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-bold text-green-700">
+                          <Check className="h-3 w-3" /> In
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">Thinking…</span>
+                      )}
+                    </motion.div>
+                  )
+                })}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="absolute inset-x-0 bottom-0 bg-white/90 px-5 pb-8 pt-3 backdrop-blur-sm border-t border-border">
+        {!submitted ? (
+          <button
+            onClick={handleSubmit}
+            disabled={!myTitle.trim()}
+            className="w-full rounded-2xl bg-nets-red py-4 text-sm font-extrabold text-white disabled:opacity-40 active:opacity-80">
+            Submit My Idea
+          </button>
+        ) : (
+          <button
+            onClick={handleProceed}
+            disabled={!allArrived}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-nets-navy py-4 text-sm font-extrabold text-white disabled:opacity-40 active:opacity-80">
+            {allArrived ? (
+              <><Sparkles className="h-4 w-4" /> See All {mockMemberIdeas.length + 1} Ideas &amp; Vote</>
+            ) : (
+              <><Zap className="h-4 w-4 animate-pulse" /> Waiting for others…</>
+            )}
+          </button>
+        )}
+        <p className="mt-2 text-center text-xs text-muted-foreground">Ideas are revealed to everyone only after all members submit</p>
+      </div>
+    </motion.div>
+  )
+}
+
+// ─── IdeaVotingView ───────────────────────────────────────────────────────────
+
+const VOTE_OPTIONS: { score: IdeaVoteScore; label: string; emoji: string; bg: string; active: string }[] = [
+  { score: 1, label: "Not for me", emoji: "😕", bg: "bg-gray-100", active: "bg-gray-200 ring-2 ring-gray-400" },
+  { score: 2, label: "Could work", emoji: "🙂", bg: "bg-amber-50", active: "bg-amber-100 ring-2 ring-amber-400" },
+  { score: 3, label: "Love it!", emoji: "🔥", bg: "bg-red-50", active: "bg-nets-red text-white ring-2 ring-nets-red" },
+]
+
+function IdeaVotingView({
+  ideas,
+  myMemberId,
+  onBack,
+  onDone,
+}: {
+  ideas: CircleIdea[]
+  myMemberId: string
+  onBack: () => void
+  onDone: (votedIdeas: CircleIdea[]) => void
+}) {
+  const [myVotes, setMyVotes] = useState<Record<string, IdeaVoteScore>>({})
+  const votedCount = Object.keys(myVotes).length
+  const allVoted = votedCount >= ideas.length
+
+  const shuffled = useMemo(() => [...ideas].sort(() => 0.5 - Math.random()), [ideas])
+
+  function vote(ideaId: string, score: IdeaVoteScore) {
+    setMyVotes((v) => ({ ...v, [ideaId]: score }))
+  }
+
+  function handleSubmit() {
+    const voted = ideas.map((idea) => ({
+      ...idea,
+      votes: [
+        { memberId: myMemberId, score: myVotes[idea.id] ?? (2 as IdeaVoteScore) },
+        // Simulate two other members' votes
+        { memberId: "sim-1", score: ([3, 2, 1][Math.floor(Math.random() * 3)]) as IdeaVoteScore },
+        { memberId: "sim-2", score: ([3, 2, 2][Math.floor(Math.random() * 3)]) as IdeaVoteScore },
+      ],
+    }))
+    onDone(voted)
+  }
+
+  return (
+    <motion.div initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -40, opacity: 0 }}
+      className="flex h-full flex-col bg-nets-page">
+      <StatusBar />
+      <Header title="Vote on Ideas" onBack={onBack} subtitle="Step 2 of 3" />
+      <JourneySteps active={1} />
+
+      <div className="mx-5 my-2 flex items-center gap-3">
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-border">
+          <motion.div
+            className="h-full rounded-full bg-nets-red"
+            animate={{ width: `${(votedCount / ideas.length) * 100}%` }}
+            transition={{ type: "spring", stiffness: 180, damping: 20 }}
+          />
+        </div>
+        <span className="text-xs font-bold text-nets-navy tabular-nums">{votedCount}/{ideas.length}</span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-5 pb-28 pt-1 space-y-4">
+        <div className="flex items-start gap-2 rounded-2xl bg-nets-blue/10 border border-nets-blue/20 px-4 py-2.5">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-nets-blue" />
+          <p className="text-xs text-nets-blue leading-relaxed">
+            Your votes are <strong>private</strong>. The AI uses aggregate signals, not individual preferences.
+          </p>
+        </div>
+
+        {shuffled.map((idea) => {
+          const myVote = myVotes[idea.id]
+          const isMyIdea = idea.submittedById === myMemberId
+          return (
+            <div key={idea.id} className="rounded-3xl bg-white p-4 shadow-sm space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="font-extrabold text-nets-navy text-base leading-snug">{idea.title}</p>
+                  {idea.description && (
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">{idea.description}</p>
+                  )}
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <span className="rounded-full bg-nets-page border border-border px-2 py-0.5 text-xs font-bold text-nets-navy">
+                    {idea.category}
+                  </span>
+                  {isMyIdea && (
+                    <span className="rounded-full bg-nets-red/10 px-2 py-0.5 text-xs font-bold text-nets-red">
+                      Your idea
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <MapPin className="h-3 w-3 shrink-0" />
+                <span className="font-semibold">${idea.estimatedMin}–${idea.estimatedMax} per person</span>
+                <span className="ml-auto flex items-center gap-0.5">
+                  <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                  <span className="font-bold text-nets-navy">{idea.reviewScore.toFixed(1)}</span>
+                  <span className="text-muted-foreground">({idea.reviewCount.toLocaleString()})</span>
+                </span>
+              </div>
+
+              {idea.isCircleReady && (
+                <div className="flex items-center gap-1.5 rounded-xl bg-nets-green/10 px-3 py-1.5">
+                  <Check className="h-3.5 w-3.5 text-nets-green" />
+                  <span className="text-xs font-bold text-nets-green">
+                    Circle-Ready · {idea.circleReadyDiscount}% group discount available
+                  </span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-2">
+                {VOTE_OPTIONS.map((opt) => (
+                  <button key={opt.score} onClick={() => vote(idea.id, opt.score)}
+                    className={`flex flex-col items-center gap-1 rounded-2xl py-2.5 text-xs font-bold transition-all active:scale-95 ${
+                      myVote === opt.score ? opt.active : `${opt.bg} text-nets-navy`
+                    }`}>
+                    <span className="text-xl leading-none">{opt.emoji}</span>
+                    <span className={myVote === opt.score && opt.score === 3 ? "text-white" : ""}>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="absolute inset-x-0 bottom-0 bg-white/90 px-5 pb-8 pt-3 backdrop-blur-sm border-t border-border">
+        <button onClick={handleSubmit} disabled={!allVoted}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-nets-red py-4 text-sm font-extrabold text-white disabled:opacity-40 active:opacity-80">
+          <Sparkles className="h-4 w-4" />
+          {allVoted ? "See AI Ranking" : `Vote on all ideas (${ideas.length - votedCount} left)`}
+        </button>
+        <p className="mt-2 text-center text-xs text-muted-foreground">AI factors in budget fit, votes, reviews &amp; Circle-Ready offers</p>
+      </div>
+    </motion.div>
+  )
+}
+
+// ─── AIRankingView ────────────────────────────────────────────────────────────
+
+function AIRankingView({
+  ideas,
+  myCommitment,
+  circle,
+  onBack,
+  onSelect,
+}: {
+  ideas: CircleIdea[]
+  myCommitment: number
+  circle: Circle
+  onBack: () => void
+  onSelect: (idea: CircleIdea) => void
+}) {
+  const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 2200)
+    return () => clearTimeout(t)
+  }, [])
+
+  const memberCommitments = useMemo(
+    () => Array.from({ length: circle.members.length }, (_, i) =>
+      i === 0 ? myCommitment : myCommitment * (0.85 + (i * 0.07))
+    ),
+    [circle.members.length, myCommitment]
+  )
+
+  const ranked = useMemo(() => {
+    return [...ideas]
+      .map((idea) => ({ idea, ...computeIdeaScore(idea, memberCommitments) }))
+      .sort((a, b) => b.aiScore - a.aiScore)
+  }, [ideas, memberCommitments])
+
+  const winner = ranked[0]
+
+  const LOADING_STEPS = [
+    "Checking budget fit for all members…",
+    "Analysing vote signals…",
+    "Fetching review scores…",
+    "Scoring Circle-Ready offers…",
+  ]
+
+  return (
+    <motion.div initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -40, opacity: 0 }}
+      className="flex h-full flex-col bg-nets-page">
+      <StatusBar />
+      <Header title="AI Ranking" onBack={onBack} subtitle="Step 3 of 3" />
+      <JourneySteps active={1} />
+
+      {loading ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-5 px-8">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1.4, repeat: Infinity, ease: "linear" }}
+            className="h-16 w-16 rounded-full border-4 border-nets-red/20 border-t-nets-red"
+          />
+          <div className="text-center space-y-1">
+            <p className="text-base font-extrabold text-nets-navy">Circle AI is ranking your ideas…</p>
+            <p className="text-xs text-muted-foreground">Weighing budgets, votes, reviews &amp; Circle-Ready offers</p>
+          </div>
+          <div className="w-full max-w-xs rounded-2xl bg-white p-4 shadow-sm space-y-2.5">
+            {LOADING_STEPS.map((s, i) => (
+              <motion.div key={s} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.25 + i * 0.35 }}
+                className="flex items-center gap-2.5 text-xs text-muted-foreground">
+                <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }}
+                  transition={{ delay: 0.45 + i * 0.35 }}
+                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-nets-green text-white">
+                  <Check className="h-2.5 w-2.5" />
+                </motion.span>
+                {s}
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="flex-1 overflow-y-auto px-5 pb-32 pt-3 space-y-3">
+            <div className="rounded-2xl bg-nets-blue/10 border border-nets-blue/20 px-4 py-3">
+              <p className="text-xs text-nets-blue font-semibold leading-relaxed">
+                <strong>Circle AI</strong> ranked {ideas.length} ideas across budget fit, group votes, web reviews, and NETS merchant scores.
+              </p>
+            </div>
+
+            {ranked.map(({ idea, aiScore, budgetFitPct, popularityScore, qualityScore }, rank) => {
+              const isWinner = rank === 0
+              const isExp = expanded === idea.id
+              const voteAvg = idea.votes.length > 0
+                ? idea.votes.reduce((s, v) => s + v.score, 0) / idea.votes.length : 2
+              const voteEmoji = voteAvg >= 2.5 ? "🔥" : voteAvg >= 1.8 ? "🙂" : "😕"
+
+              return (
+                <div key={idea.id}
+                  className={`overflow-hidden rounded-3xl shadow-sm ${isWinner ? "ring-2 ring-nets-red" : "bg-white"}`}>
+                  {isWinner && (
+                    <div className="flex items-center gap-2 bg-nets-red px-4 py-1.5">
+                      <Sparkles className="h-3.5 w-3.5 text-white" />
+                      <span className="text-xs font-extrabold uppercase tracking-wider text-white">Circle Recommends</span>
+                    </div>
+                  )}
+                  <div className={`space-y-3 p-4 ${isWinner ? "bg-white" : ""}`}>
+                    <div className="flex items-start gap-3">
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl text-base font-extrabold ${
+                        isWinner ? "bg-nets-red text-white" : "bg-nets-page text-nets-navy"
+                      }`}>#{rank + 1}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-extrabold leading-tight text-nets-navy">{idea.title}</p>
+                        {idea.description && (
+                          <p className="mt-0.5 truncate text-xs text-muted-foreground">{idea.description}</p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-0.5">
+                        <span className={`text-2xl font-extrabold tabular-nums ${isWinner ? "text-nets-red" : "text-nets-navy"}`}>
+                          {aiScore}
+                        </span>
+                        <span className="text-xs text-muted-foreground">AI score</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className={`flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${
+                        budgetFitPct >= 80 ? "bg-green-100 text-green-700" :
+                        budgetFitPct >= 55 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
+                      }`}>
+                        <Wallet className="h-3 w-3" /> {budgetFitPct}% budget fit
+                      </span>
+                      <span className="flex items-center gap-1 rounded-full border border-border bg-nets-page px-2 py-1 text-xs font-bold text-nets-navy">
+                        {voteEmoji} {popularityScore}% voted yes
+                      </span>
+                      <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700">
+                        <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                        {idea.reviewScore.toFixed(1)} ({idea.reviewCount.toLocaleString()})
+                      </span>
+                      {idea.isCircleReady && (
+                        <span className="flex items-center gap-1 rounded-full bg-nets-green/10 px-2 py-1 text-xs font-bold text-nets-green">
+                          <Check className="h-3 w-3" /> Circle-Ready
+                        </span>
+                      )}
+                    </div>
+
+                    <button onClick={() => setExpanded(isExp ? null : idea.id)}
+                      className="flex w-full items-center justify-between rounded-xl bg-nets-page px-3 py-2 text-xs font-semibold text-nets-navy">
+                      <span>${idea.estimatedMin}–${idea.estimatedMax} per person · {idea.category}</span>
+                      <ChevronRight className={`h-4 w-4 transition-transform ${isExp ? "rotate-90" : ""}`} />
+                    </button>
+
+                    <AnimatePresence>
+                      {isExp && (
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                          <div className="rounded-xl bg-nets-page p-3 space-y-1.5 text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">NETS merchant coverage</span>
+                              <span className="font-bold text-nets-navy">{idea.netsMerchantScore}/100</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Budget alignment</span>
+                              <span className="font-bold text-nets-navy">{budgetFitPct}% of group in range</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Quality score</span>
+                              <span className="font-bold text-nets-navy">{qualityScore}/100</span>
+                            </div>
+                            {idea.isCircleReady && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Circle-Ready discount</span>
+                                <span className="font-bold text-nets-green">–{idea.circleReadyDiscount}% for group</span>
+                              </div>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="absolute inset-x-0 bottom-0 space-y-2 border-t border-border bg-white/90 px-5 pb-8 pt-3 backdrop-blur-sm">
+            <button onClick={() => onSelect(winner.idea)}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-nets-red py-4 text-sm font-extrabold text-white shadow-lg shadow-nets-red/20 active:opacity-80">
+              <Check className="h-4 w-4" />
+              Go with &ldquo;{winner.idea.title}&rdquo;
+            </button>
+            <p className="text-center text-xs text-muted-foreground">
+              Tap any ranked idea to run its Circle Check instead
+            </p>
+          </div>
+        </>
+      )}
     </motion.div>
   )
 }

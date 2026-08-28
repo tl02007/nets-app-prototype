@@ -28,11 +28,14 @@ type NavContextType = {
 export type CircleView =
   | "list"
   | "create"
-  | "commitment"   // V2: private dollar-amount commitment (replaces "comfort" tier)
-  | "comfort"      // legacy alias — redirects to "commitment" in CircleScreen
-  | "experience"
-  | "check"        // V2: Circle Ready / Adjust Plan / Not Aligned (replaces "confidence" %)
-  | "confidence"   // legacy alias — redirects to "check" in CircleScreen
+  | "commitment"       // V2: private dollar-amount commitment (replaces "comfort" tier)
+  | "comfort"          // legacy alias — redirects to "commitment" in CircleScreen
+  | "experience"       // legacy (kept for old circles) — replaced by idea flow in new circles
+  | "idea-submission"  // V2: step 1 — each member submits one idea
+  | "idea-voting"      // V2: step 2 — members vote on all ideas
+  | "ai-ranking"       // V2: step 3 — AI ranks ideas by budget fit, votes, reviews
+  | "check"            // V2: Circle Ready / Adjust Plan / Not Aligned (replaces "confidence" %)
+  | "confidence"       // legacy alias — redirects to "check" in CircleScreen
   | "wallet-setup"
   | "detail"
   | "settle"
