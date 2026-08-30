@@ -141,26 +141,9 @@ export function CircleScreen() {
             activity={selectedActivity}
             myCommitment={myCommitment}
             onBack={() => setCircleView("ai-ranking")}
-            onProceed={() => setCircleView("wallet-setup")}
-          />
-        )}
-        {resolvedView === "wallet-setup" && pendingCircle && (
-          <WalletSetupView
-            key="wallet-setup"
-            circle={pendingCircle}
-            activity={selectedActivity}
-            onBack={() => setCircleView("check")}
-            onSkip={() => {
+            onProceed={() => {
+              // No shared wallet step — activate circle directly into Circle Pay
               activateCircle(pendingCircle.id, false)
-              setPendingCircleId(null)
-              setSelectedActivityId(null)
-              setCustomActivity(undefined)
-              setPendingIdeas([])
-              openCircle(pendingCircle.id)
-            }}
-            onDone={(target, perPerson) => {
-              createWallet(pendingCircle.id, target, perPerson)
-              activateCircle(pendingCircle.id, true)
               setPendingCircleId(null)
               setSelectedActivityId(null)
               setCustomActivity(undefined)
@@ -1270,9 +1253,12 @@ function CircleDetail({
   onReconcile: () => void
   onAddExpense: (expense: Omit<CircleExpense, "id">, deductFromWallet: boolean) => void
 }) {
+  const { user } = useCircleData()
   const total = circleTotal(circle)
   const share = perHead(circle)
-  const wallet = circle.tripWallet
+  const mySpend = circle.expenses
+    .filter((e) => e.paidById === "alex")
+    .reduce((sum, e) => sum + e.amount, 0)
 
   const [payMode, setPayMode] = useState<PayMode>("integrated")
   const [detection, setDetection] = useState<typeof SIMULATED_PAYMENTS[0] | null>(null)
@@ -1348,7 +1334,7 @@ function CircleDetail({
     const now = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" })
     onAddExpense(
       { title: manualTitle, merchant: manualTitle, category: manualCategory, amount: parseFloat(manualAmount), paidById: manualPaidBy, participants: manualSplit, time: now },
-      !!wallet
+      true  // always deduct from NETS Prepaid for manual entries too
     )
     setManualEntryOpen(false)
     setManualTitle("")
@@ -1378,14 +1364,14 @@ function CircleDetail({
   function handleAddAll() {
     if (!detection) return
     const now = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" })
-    onAddExpense({ title: detection.description, merchant: detection.merchant, category: detection.category, amount: detection.amount, paidById: "alex", time: now }, !!wallet)
+    onAddExpense({ title: detection.description, merchant: detection.merchant, category: detection.category, amount: detection.amount, paidById: "alex", time: now }, true)
     setDetection(null)
   }
 
   function handleConfirmParticipants() {
     if (!detection || selectedParticipants.length === 0) return
     const now = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" })
-    onAddExpense({ title: `${detection.description} (${selectedParticipants.length} ppl)`, merchant: detection.merchant, category: detection.category, amount: detection.amount, paidById: "alex", participants: selectedParticipants, time: now }, !!wallet)
+    onAddExpense({ title: `${detection.description} (${selectedParticipants.length} ppl)`, merchant: detection.merchant, category: detection.category, amount: detection.amount, paidById: "alex", participants: selectedParticipants, time: now }, true)
     setDetection(null)
     setParticipantModal(false)
   }
@@ -1444,29 +1430,40 @@ function CircleDetail({
       <div className="-mt-3 flex-1 overflow-y-auto rounded-t-3xl bg-nets-page px-5 pb-28 pt-5">
         {circle.status === "active" && <JourneySteps active={2} />}
         {/* Trip Wallet */}
-        {wallet && circle.status === "active" && (
+        {circle.status === "active" && (
           <motion.div initial={{ y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mb-4 overflow-hidden rounded-3xl bg-nets-navy">
             <div className="p-4 pb-3">
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <Wallet className="h-4 w-4 text-white/60" />
-                  <span className="text-xs font-semibold text-white/60 uppercase tracking-wide">Trip Wallet</span>
+                  <CreditCard className="h-4 w-4 text-white/60" />
+                  <span className="text-xs font-semibold text-white/60 uppercase tracking-wide">NETS Prepaid</span>
                 </div>
-                <span className="text-xs text-white/40">${fmt(wallet.target)} pooled</span>
+                <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-white/60">Your account</span>
               </div>
-              <p className="text-3xl font-extrabold text-white">${fmt(wallet.balance)}</p>
-              <p className="text-xs text-white/50">remaining</p>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/20">
+              <p className="text-3xl font-extrabold text-white">${fmt(user.balance)}</p>
+              <p className="text-xs text-white/50 mb-3">available balance</p>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-2xl bg-white/10 p-2.5">
+                  <p className="text-[10px] text-white/50 font-semibold">Projected share</p>
+                  <p className="text-base font-extrabold text-white">${fmt(share)}</p>
+                </div>
+                <div className="rounded-2xl bg-white/10 p-2.5">
+                  <p className="text-[10px] text-white/50 font-semibold">Spent so far</p>
+                  <p className={`text-base font-extrabold ${mySpend > share ? "text-nets-red" : "text-nets-green"}`}>${fmt(mySpend)}</p>
+                </div>
+              </div>
+
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/20">
                 <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${Math.max(4, (wallet.balance / wallet.target) * 100)}%` }}
+                  animate={{ width: `${Math.min(100, share > 0 ? (mySpend / share) * 100 : 0)}%` }}
                   transition={{ duration: 0.8, ease: "easeOut" }}
-                  className="h-full rounded-full bg-white"
+                  className={`h-full rounded-full ${mySpend > share ? "bg-nets-red" : "bg-nets-green"}`}
                 />
               </div>
               <div className="mt-1 flex justify-between text-[10px] text-white/40">
-                <span>${fmt(wallet.target - wallet.balance)} spent</span>
-                <span>${fmt(wallet.balance)} left</span>
+                <span>${fmt(mySpend)} paid</span>
+                <span>${fmt(Math.max(0, share - mySpend))} left of share</span>
               </div>
             </div>
           </motion.div>
@@ -1687,45 +1684,30 @@ function CircleDetail({
       {/* Bottom CTA */}
       <div className="absolute inset-x-0 bottom-0 z-30 border-t border-border bg-card px-5 pb-8 pt-3 space-y-2">
         {circle.status === "active" && (
-          wallet ? (
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={openQrScanner}
-                className="flex items-center justify-center gap-2 rounded-2xl bg-nets-red py-3 text-sm font-bold text-white shadow-sm shadow-nets-red/20"
-              >
-                <QrCode className="h-4 w-4" /> Scan NETS QR
-              </button>
-              <button
-                onClick={() => setManualEntryOpen(true)}
-                className="flex items-center justify-center gap-2 rounded-2xl border-2 border-nets-navy/20 bg-nets-navy/5 py-3 text-sm font-bold text-nets-navy"
-              >
-                <PenLine className="h-4 w-4" /> Add Manually
-              </button>
-            </div>
-          ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={openQrScanner}
+              className="flex items-center justify-center gap-2 rounded-2xl bg-nets-red py-3 text-sm font-bold text-white shadow-sm shadow-nets-red/20"
+            >
+              <QrCode className="h-4 w-4" /> Scan NETS QR
+            </button>
             <button
               onClick={() => setManualEntryOpen(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-nets-navy/20 bg-nets-navy/5 py-3 text-sm font-bold text-nets-navy"
+              className="flex items-center justify-center gap-2 rounded-2xl border-2 border-nets-navy/20 bg-nets-navy/5 py-3 text-sm font-bold text-nets-navy"
             >
-              <PenLine className="h-4 w-4" /> Add Expense Manually
+              <PenLine className="h-4 w-4" /> Add Manually
             </button>
-          )
+          </div>
         )}
         {circle.status === "settled" ? (
           <div className="flex w-full items-center justify-center gap-2 rounded-2xl bg-nets-green/10 border border-nets-green/30 py-4 text-base font-bold text-nets-green">
             <Check className="h-5 w-5" /> Circle settled — no chasing needed
           </div>
-        ) : circle.tripWallet ? (
-          <button onClick={onReconcile} disabled={circle.expenses.length === 0}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-nets-red py-4 text-base font-bold text-white shadow-lg shadow-nets-red/25 disabled:opacity-40">
-            <Zap className="h-5 w-5" />
-            {circle.expenses.length === 0 ? "Waiting for expenses…" : "Reconcile Now"}
-          </button>
         ) : (
           <button onClick={onSettle} disabled={circle.expenses.length === 0}
             className="flex w-full items-center justify-center gap-2 rounded-2xl bg-nets-red py-4 text-base font-bold text-white shadow-lg shadow-nets-red/25 disabled:opacity-40">
-            <Wallet className="h-5 w-5" />
-            {circle.expenses.length === 0 ? "Waiting for expenses…" : `Settle up · $${fmt(total)}`}
+            <Zap className="h-5 w-5" />
+            {circle.expenses.length === 0 ? "Waiting for expenses…" : `Circle Close · $${fmt(total)}`}
           </button>
         )}
       </div>
@@ -1950,26 +1932,24 @@ function CircleDetail({
                       ))}
                     </div>
 
-                    {wallet && (
-                      <div className="mb-4 rounded-2xl bg-white/10 px-4 py-3">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-white/60">Circle Wallet balance</span>
-                          <span className="font-extrabold text-white">S${fmt(wallet.balance)}</span>
-                        </div>
-                        {scanAmount && parseFloat(scanAmount) > 0 && (
-                          <div className="mt-1.5 flex items-center justify-between text-xs">
-                            <span className="text-white/60">After this payment</span>
-                            <span className={`font-extrabold ${wallet.balance - parseFloat(scanAmount) >= 0 ? "text-nets-green" : "text-nets-red"}`}>
-                              S${fmt(Math.max(0, wallet.balance - parseFloat(scanAmount || "0")))}
-                            </span>
-                          </div>
-                        )}
-                        <div className="mt-2 flex items-center gap-1.5">
-                          <ShieldCheck className="h-3 w-3 text-white/40 shrink-0" />
-                          <p className="text-[10px] text-white/40">Deducted from NETS Prepaid Circle wallet</p>
-                        </div>
+                    <div className="mb-4 rounded-2xl bg-white/10 px-4 py-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-white/60">NETS Prepaid balance</span>
+                        <span className="font-extrabold text-white">S${fmt(user.balance)}</span>
                       </div>
-                    )}
+                      {scanAmount && parseFloat(scanAmount) > 0 && (
+                        <div className="mt-1.5 flex items-center justify-between text-xs">
+                          <span className="text-white/60">After this payment</span>
+                          <span className={`font-extrabold ${user.balance - parseFloat(scanAmount) >= 0 ? "text-nets-green" : "text-nets-red"}`}>
+                            S${fmt(Math.max(0, user.balance - parseFloat(scanAmount || "0")))}
+                          </span>
+                        </div>
+                      )}
+                      <div className="mt-2 flex items-center gap-1.5">
+                        <ShieldCheck className="h-3 w-3 text-white/40 shrink-0" />
+                        <p className="text-[10px] text-white/40">Deducted from your personal NETS Prepaid</p>
+                      </div>
+                    </div>
 
                     <button
                       onClick={handleQrPay}

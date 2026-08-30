@@ -381,7 +381,15 @@ export function CircleDataProvider({ children }: { children: ReactNode }) {
     )
   }
 
-  const addCircleExpense = (id: string, expense: Omit<CircleExpense, "id">, deductFromWallet = false) => {
+  const addCircleExpense = (id: string, expense: Omit<CircleExpense, "id">, deductFromNETS = false) => {
+    // When deductFromNETS=true, deduct the amount from the user's personal NETS Prepaid balance
+    if (deductFromNETS) {
+      setUser((current) => {
+        const newBalance = parseFloat(Math.max(0, current.balance - expense.amount).toFixed(2))
+        if (supabase) void supabase.from("users").update({ balance: newBalance }).eq("id", "alex")
+        return { ...current, balance: newBalance }
+      })
+    }
     setCircles((current) =>
       current.map((c) => {
         if (c.id !== id) return c
@@ -389,27 +397,7 @@ export function CircleDataProvider({ children }: { children: ReactNode }) {
         const updatedMembers = c.members.map((m) =>
           m.id === expense.paidById ? { ...m, paid: m.paid + expense.amount } : m
         )
-        let updated: Circle = { ...c, expenses: [...c.expenses, newExpense], members: updatedMembers }
-        if (deductFromWallet && c.tripWallet) {
-          updated = {
-            ...updated,
-            tripWallet: {
-              ...c.tripWallet,
-              balance: Math.max(0, c.tripWallet.balance - expense.amount),
-              transactions: [
-                ...c.tripWallet.transactions,
-                {
-                  id: createId("w"),
-                  description: expense.title,
-                  merchant: expense.merchant,
-                  amount: expense.amount,
-                  time: expense.time,
-                  splitWith: c.members.map((m) => m.id),
-                },
-              ],
-            },
-          }
-        }
+        const updated: Circle = { ...c, expenses: [...c.expenses, newExpense], members: updatedMembers }
         void persistCircle(updated)
         return updated
       })
