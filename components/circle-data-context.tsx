@@ -382,14 +382,43 @@ export function CircleDataProvider({ children }: { children: ReactNode }) {
   }
 
   const addCircleExpense = (id: string, expense: Omit<CircleExpense, "id">, deductFromNETS = false) => {
-    // When deductFromNETS=true, deduct the amount from the user's personal NETS Prepaid balance
+    // When deductFromNETS=true, deduct from NETS Prepaid balance and record a transaction in History
     if (deductFromNETS) {
       setUser((current) => {
         const newBalance = parseFloat(Math.max(0, current.balance - expense.amount).toFixed(2))
         if (supabase) void supabase.from("users").update({ balance: newBalance }).eq("id", "alex")
         return { ...current, balance: newBalance }
       })
+
+      const now = new Date()
+      const timeLabel = now.toLocaleString("en-SG", {
+        day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false,
+      }).replace(",", "")
+      const newTxn: Transaction = {
+        id: createId("t"),
+        merchant: expense.merchant ?? expense.title,
+        category: expense.category ?? "Circle Pay",
+        amount: expense.amount,
+        type: "out",
+        date: timeLabel,
+        icon: (expense.merchant ?? expense.title)[0]?.toUpperCase() ?? "N",
+        color: "var(--nets-red)",
+      }
+      setTransactions((current) => [newTxn, ...current])
+      if (supabase) {
+        void supabase.from("transactions").insert({
+          id: newTxn.id,
+          merchant: newTxn.merchant,
+          category: newTxn.category,
+          amount: newTxn.amount,
+          type: newTxn.type,
+          date: newTxn.date,
+          icon: newTxn.icon,
+          color: newTxn.color,
+        })
+      }
     }
+
     setCircles((current) =>
       current.map((c) => {
         if (c.id !== id) return c

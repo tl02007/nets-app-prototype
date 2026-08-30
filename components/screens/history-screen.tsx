@@ -52,7 +52,7 @@ export function HistoryScreen() {
         >
           <div className="flex items-end justify-between">
             <div>
-              <p className="text-xs text-white/60">Spent in June</p>
+              <p className="text-xs text-white/60">Spent in {new Date().toLocaleString("en-SG", { month: "long" })}</p>
               <p className="text-2xl font-extrabold">${fmt(spent)}</p>
             </div>
             <div className="text-right">

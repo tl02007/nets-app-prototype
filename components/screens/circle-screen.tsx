@@ -2627,8 +2627,10 @@ function computeIdeaScore(
   idea: CircleIdea,
   memberCommitments: number[]
 ): { aiScore: number; budgetFitPct: number; popularityScore: number; qualityScore: number } {
+  // Budget fit: can the member's commitment cover the idea's minimum cost?
+  // No upper bound — committing more than the max price is still affordable.
   const inRange = memberCommitments.filter(
-    (c) => c >= idea.estimatedMin * 0.85 && c <= idea.estimatedMax * 1.2
+    (c) => c >= idea.estimatedMin * 0.85
   ).length
   const budgetFitPct = memberCommitments.length > 0
     ? Math.round((inRange / memberCommitments.length) * 100) : 60
