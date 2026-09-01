@@ -3537,6 +3537,54 @@ function OneWeekLaterButton() {
   )
 }
 
+function downloadPayNowQr(name: string, amount: number) {
+  const canvas = document.createElement("canvas")
+  canvas.width = 512
+  canvas.height = 600
+  const ctx = canvas.getContext("2d")
+  if (!ctx) return
+
+  ctx.fillStyle = "white"
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  ctx.fillStyle = "#001f3f"
+  ctx.font = "bold 24px sans-serif"
+  ctx.textAlign = "center"
+  ctx.fillText("PayNow QR", canvas.width / 2, 50)
+
+  ctx.fillStyle = "#cccccc"
+  ctx.fillRect(100, 90, 312, 312)
+
+  for (let i = 0; i < 16; i++) {
+    for (let j = 0; j < 16; j++) {
+      if ((i + j) % 2 === 0) {
+        ctx.fillStyle = "#001f3f"
+        ctx.fillRect(100 + i * 19.5, 90 + j * 19.5, 19.5, 19.5)
+      }
+    }
+  }
+
+  ctx.fillStyle = "#001f3f"
+  ctx.font = "14px sans-serif"
+  ctx.fillText(`To: ${name}`, canvas.width / 2, 450)
+  ctx.fillText(`Amount: S$${amount.toFixed(2)}`, canvas.width / 2, 480)
+  ctx.font = "12px sans-serif"
+  ctx.fillStyle = "#666666"
+  ctx.fillText("Scan with your banking app", canvas.width / 2, 530)
+
+  canvas.toBlob((blob) => {
+    if (!blob) return
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `paynow-qr-${name.replace(/\s+/g, "-")}.png`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  })
+}
+
 function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () => void; onDone: () => void }) {
   const { createNextRoundRequest, acceptNextRound, declineNextRound } = useCircleData()
   const { scene, clearScene } = useDemoContext()
@@ -3771,8 +3819,12 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
               <p className="text-sm text-muted-foreground">to {active.toName}</p>
             </div>
 
-            <div className="mb-5 flex justify-center">
+            <div className="mb-5 flex flex-col items-center gap-4">
               <PayNowQr name={active.toName} />
+              <button onClick={() => downloadPayNowQr(active.toName, active.amount)}
+                className="flex items-center gap-2 rounded-xl border border-nets-navy/20 bg-nets-navy/5 px-4 py-2 text-sm font-semibold text-nets-navy active:opacity-70">
+                <Download className="h-4 w-4" /> Download QR
+              </button>
             </div>
 
             <div className="mb-5 rounded-2xl bg-nets-navy/5 p-4 space-y-2">
