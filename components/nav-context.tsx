@@ -21,22 +21,17 @@ type NavContextType = {
 }
 
 // V2 concept doc flow:
-//   list → create → commitment (private dollar amount) → experience (spend bands)
-//       → check (Circle Ready / Adjust Plan / Not Aligned) → wallet-setup → detail
+//   list → create → commitment (private spend band) → idea-submission → idea-voting
+//       → ai-ranking → check (Circle Ready / Adjust Plan / Not Aligned) → detail
 //       → settle / reconcile
-// "comfort" and "confidence" are kept as aliases so any external references still compile.
 export type CircleView =
   | "list"
   | "create"
-  | "commitment"       // V2: private dollar-amount commitment (replaces "comfort" tier)
-  | "comfort"          // legacy alias — redirects to "commitment" in CircleScreen
-  | "experience"       // legacy (kept for old circles) — replaced by idea flow in new circles
+  | "commitment"       // V2: private spend band commitment
   | "idea-submission"  // V2: step 1 — each member submits one idea
   | "idea-voting"      // V2: step 2 — members vote on all ideas
-  | "ai-ranking"       // V2: step 3 — AI ranks ideas by budget fit, votes, reviews
-  | "check"            // V2: Circle Ready / Adjust Plan / Not Aligned (replaces "confidence" %)
-  | "confidence"       // legacy alias — redirects to "check" in CircleScreen
-  | "wallet-setup"
+  | "ai-ranking"       // V2: step 3 — Circle Engine ranks ideas
+  | "check"            // V2: Circle Ready / Adjust Plan / Not Aligned
   | "detail"
   | "settle"
   | "reconcile"

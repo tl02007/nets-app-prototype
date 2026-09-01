@@ -13,15 +13,15 @@ TRUNCATE TABLE transactions        CASCADE;
 TRUNCATE TABLE users               CASCADE;
 
 -- ============================================================
--- 2. User (Alex Tan — the demo user)
+-- 2. User (Thanis — the demo user)
 -- ============================================================
 INSERT INTO users (id, name, first_name, email, handle, balance, tier, bank)
 VALUES (
-  'alex',
-  'Alex Tan',
-  'Alex',
-  'alex.tan@nets.com.sg',
-  '+65 9123 4567',
+  'thanis',
+  'Thanis',
+  'Thanis',
+  'thanis@nets.com.sg',
+  '+65 9001 2345',
   1247.50,
   'NETS+ Gold',
   'DBS •••• 8102'
@@ -47,11 +47,11 @@ VALUES (
   '[{"label":"Korean BBQ (Gen Korean BBQ House, Bugis+)","amount":35},{"label":"Bowling (Orchid Bowl, Leisure Park Kallang)","amount":17}]'
 );
 
--- c2: Settled — Cheryl''s Birthday Dinner
+-- c2: Settled — Sherwin's Birthday Dinner
 INSERT INTO circles (id, name, emoji, cover, status, date, activity_type, estimated_cost_per_person, circle_confidence, my_affordability_signal, cost_breakdown)
 VALUES (
   'c2',
-  'Cheryl''s Birthday Dinner',
+  'Sherwin''s Birthday Dinner',
   'Celebration',
   'var(--nets-red)',
   'settled',
@@ -85,38 +85,38 @@ VALUES (
 
 -- c1 members (Bugis Night Out) — all paid=0, expenses will be added live
 INSERT INTO circle_members (circle_id, member_id, name, initial, color, paid) VALUES
-  ('c1', 'alex',   'Alex (You)',  'A', 'var(--nets-red)',   0),
-  ('c1', 'bryan',  'Bryan Lim',   'B', 'var(--nets-navy)',  0),
-  ('c1', 'cheryl', 'Cheryl Ng',   'C', 'var(--nets-blue)',  0),
-  ('c1', 'dinesh', 'Dinesh R.',   'D', 'var(--nets-green)', 0);
+  ('c1', 'thanis',  'Thanis (You)', 'T', 'var(--nets-red)',   0),
+  ('c1', 'bryan',   'Bryan',        'B', 'var(--nets-navy)',  0),
+  ('c1', 'krishna', 'Krishna',      'K', 'var(--nets-blue)',  0),
+  ('c1', 'sherwin', 'Sherwin',      'S', 'var(--nets-green)', 0);
 
--- c2 members (Birthday Dinner) — Cheryl fronted everything
+-- c2 members (Birthday Dinner) — Krishna fronted everything
 INSERT INTO circle_members (circle_id, member_id, name, initial, color, paid) VALUES
-  ('c2', 'alex',   'Alex (You)',  'A', 'var(--nets-red)',    0),
-  ('c2', 'bryan',  'Bryan Lim',   'B', 'var(--nets-navy)',   0),
-  ('c2', 'cheryl', 'Cheryl Ng',   'C', 'var(--nets-blue)',   168.00),
-  ('c2', 'dinesh', 'Dinesh R.',   'D', 'var(--nets-green)',  0);
+  ('c2', 'thanis',  'Thanis (You)', 'T', 'var(--nets-red)',    0),
+  ('c2', 'bryan',   'Bryan',        'B', 'var(--nets-navy)',   0),
+  ('c2', 'krishna', 'Krishna',      'K', 'var(--nets-blue)',   168.00),
+  ('c2', 'sherwin', 'Sherwin',      'S', 'var(--nets-green)',  0);
 
 -- c3 members (ECP Outing) — all $0, just planning
 INSERT INTO circle_members (circle_id, member_id, name, initial, color, paid) VALUES
-  ('c3', 'alex',   'Alex (You)', 'A', 'var(--nets-red)',   0),
-  ('c3', 'bryan',  'Bryan Lim',  'B', 'var(--nets-navy)',  0),
-  ('c3', 'dinesh', 'Dinesh R.',  'D', 'var(--nets-green)', 0);
+  ('c3', 'thanis',  'Thanis (You)', 'T', 'var(--nets-red)',   0),
+  ('c3', 'bryan',   'Bryan',        'B', 'var(--nets-navy)',  0),
+  ('c3', 'sherwin', 'Sherwin',      'S', 'var(--nets-green)', 0);
 
 -- ============================================================
 -- 5. Circle Expenses (only c2 is settled — real expenses recorded)
 -- ============================================================
 INSERT INTO circle_expenses (id, circle_id, title, merchant, category, amount, paid_by_id, time) VALUES
-  ('e-c2-1', 'c2', 'Dinner',        'Peach Garden (MBS)',  'Food & Drink', 132.00, 'cheryl', '19:30'),
-  ('e-c2-2', 'c2', 'Birthday cake', 'Awfully Chocolate',  'Food & Drink',  36.00, 'cheryl', '20:45');
+  ('e-c2-1', 'c2', 'Dinner',        'Peach Garden (MBS)',  'Food & Drink', 132.00, 'krishna', '19:30'),
+  ('e-c2-2', 'c2', 'Birthday cake', 'Bengawan Solo',       'Food & Drink',  36.00, 'krishna', '20:45');
 
 -- ============================================================
 -- 6. Settlements (c2 settled)
 -- ============================================================
 INSERT INTO settlements (id, circle_id, from_member_id, to_member_id, amount, status) VALUES
-  ('s-c2-1', 'c2', 'alex',   'cheryl', 42.00, 'settled'),
-  ('s-c2-2', 'c2', 'bryan',  'cheryl', 42.00, 'settled'),
-  ('s-c2-3', 'c2', 'dinesh', 'cheryl', 42.00, 'settled');
+  ('s-c2-1', 'c2', 'thanis',  'krishna', 42.00, 'settled'),
+  ('s-c2-2', 'c2', 'bryan',   'krishna', 42.00, 'settled'),
+  ('s-c2-3', 'c2', 'sherwin', 'krishna', 42.00, 'settled');
 
 -- ============================================================
 -- 7. Transactions (recent Singapore transaction history)

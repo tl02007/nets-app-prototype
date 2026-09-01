@@ -7,11 +7,12 @@ import {
   user as initialUser,
   transactions as initialTransactions,
   circleRecommendations,
+  initialNextRoundRequests,
   type Circle,
   type CircleExpense,
   type Transaction,
   type ComfortProfile,
-  type TripWalletTransaction,
+  type NextRoundRequest,
 } from "@/lib/nets-data"
 
 type CircleDataContextType = {
@@ -21,24 +22,30 @@ type CircleDataContextType = {
   circles: Circle[]
   loading: boolean
   createCircle: (name: string, participantIds: string[]) => string
-  activateCircle: (id: string, withWallet?: boolean) => void
+  activateCircle: (id: string) => void
   settleCircle: (id: string) => void
   updateBalance: (newBalance: number) => Promise<void>
   setCircleProfile: (id: string, profile: ComfortProfile, tags: string[]) => void
-  createWallet: (id: string, target: number, perPerson: number) => void
   addCircleExpense: (id: string, expense: Omit<CircleExpense, "id">, deductFromWallet?: boolean) => void
-  deductWalletBalance: (id: string, amount: number, txn: Omit<TripWalletTransaction, "id">) => void
+  // Next Round
+  nextRoundRequests: NextRoundRequest[]
+  createNextRoundRequest: (req: Omit<NextRoundRequest, "id">) => string
+  acceptNextRound: (id: string) => void
+  declineNextRound: (id: string) => void
+  applyNextRound: (id: string, amount: number) => void
+  // Demo reset
+  resetData: () => void
 }
 
 const CircleDataContext = createContext<CircleDataContextType | null>(null)
 
 const friendProfiles: Record<string, Omit<Circle["members"][number], "paid">> = {
-  alex: { id: "alex", name: "Alex (You)", initial: "A", color: "var(--nets-red)" },
-  bryan: { id: "bryan", name: "Bryan Lim", initial: "B", color: "var(--nets-navy)" },
-  cheryl: { id: "cheryl", name: "Cheryl Ng", initial: "C", color: "var(--nets-blue)" },
-  dinesh: { id: "dinesh", name: "Dinesh R.", initial: "D", color: "var(--nets-green)" },
-  elaine: { id: "elaine", name: "Elaine Koh", initial: "E", color: "var(--nets-red)" },
-  farah: { id: "farah", name: "Farah B.", initial: "F", color: "var(--nets-navy)" },
+  thanis:  { id: "thanis",  name: "Thanis (You)", initial: "T", color: "var(--nets-red)"   },
+  bryan:   { id: "bryan",   name: "Bryan",         initial: "B", color: "var(--nets-navy)"  },
+  krishna: { id: "krishna", name: "Krishna",        initial: "K", color: "var(--nets-blue)"  },
+  sherwin: { id: "sherwin", name: "Sherwin",         initial: "S", color: "var(--nets-green)" },
+  elaine:  { id: "elaine",  name: "Elaine",          initial: "E", color: "var(--nets-red)"   },
+  farah:   { id: "farah",   name: "Farah",           initial: "F", color: "var(--nets-navy)"  },
 }
 
 const createId = (prefix: string) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10000)}`
@@ -139,17 +146,21 @@ function normalizeCircleRow(row: any, members: any[], expenses: any[]): Circle {
     circleConfidence: row.circle_confidence ?? "high",
     myAffordabilitySignal: row.my_affordability_signal ?? "within",
     costBreakdown: row.cost_breakdown ?? buildCostBreakdown(circleMembers.length || 3),
-    members: circleMembers.length ? circleMembers : [{ id: "alex", name: "Alex (You)", initial: "A", color: "var(--nets-red)", paid: 0 }],
+    members: circleMembers.length ? circleMembers : [{ id: "thanis", name: "Thanis (You)", initial: "T", color: "var(--nets-red)", paid: 0 }],
     expenses: circleExpenses,
     alternatives: row.alternatives ?? (row.circle_confidence === "high" ? undefined : buildAlternatives(row.circle_confidence ?? "moderate")),
   }
 }
+
+const nrIdCounter = { n: 0 }
+function makeNrId() { return `nr-${Date.now()}-${nrIdCounter.n++}` }
 
 export function CircleDataProvider({ children }: { children: ReactNode }) {
   const [circles, setCircles] = useState<Circle[]>(initialCircles)
   const [transactions, setTransactions] = useState<typeof initialTransactions>(initialTransactions)
   const [user, setUser] = useState<typeof initialUser>(initialUser)
   const [loading, setLoading] = useState(true)
+  const [nextRoundRequests, setNextRoundRequests] = useState<NextRoundRequest[]>(initialNextRoundRequests)
   const mounted = useRef(true)
 
   useEffect(() => {
@@ -260,7 +271,7 @@ export function CircleDataProvider({ children }: { children: ReactNode }) {
   }
 
   const createCircle = (name: string, participantIds: string[]) => {
-    const memberIds = Array.from(new Set(["alex", ...participantIds]))
+    const memberIds = Array.from(new Set(["thanis", ...participantIds]))
     const members = memberIds.map((id) => ({
       ...friendProfiles[id] ?? { id, name: id, initial: id[0]?.toUpperCase() ?? "?", color: "var(--nets-navy)" },
       paid: 0,
@@ -290,44 +301,12 @@ export function CircleDataProvider({ children }: { children: ReactNode }) {
     return circle.id
   }
 
-  const activateCircle = (id: string, withWallet = false) => {
+  const activateCircle = (id: string) => {
     setCircles((current) =>
       current.map((circle) => {
         if (circle.id !== id) return circle
         if (circle.status === "active") return circle
-
-        if (withWallet) {
-          const updatedCircle: Circle = {
-            ...circle,
-            status: "active",
-            members: circle.members.map((m) => ({ ...m, paid: circle.tripWallet?.perPerson ?? 0 })),
-            expenses: [],
-          }
-          void persistCircle(updatedCircle)
-          return updatedCircle
-        }
-
-        const totalAmount = circle.estimatedCostPerPerson * circle.members.length
-        const updatedCircle: Circle = {
-          ...circle,
-          status: "active",
-          members: circle.members.map((member) =>
-            member.id === "alex"
-              ? { ...member, paid: totalAmount }
-              : { ...member, paid: 0 }
-          ),
-          expenses: [
-            {
-              id: `${circle.id}-e1`,
-              title: `${circle.activityType} payment`,
-              merchant: "NETS Circle",
-              category: "miscellaneous",
-              amount: totalAmount,
-              paidById: "alex",
-              time: "Now",
-            },
-          ],
-        }
+        const updatedCircle: Circle = { ...circle, status: "active", members: circle.members.map(m => ({ ...m, paid: 0 })), expenses: [] }
         void persistCircle(updatedCircle)
         return updatedCircle
       })
@@ -348,7 +327,7 @@ export function CircleDataProvider({ children }: { children: ReactNode }) {
   const updateBalance = async (newBalance: number) => {
     setUser((current) => ({ ...current, balance: newBalance }))
     if (supabase) {
-      await supabase.from("users").update({ balance: newBalance }).eq("id", "alex")
+      await supabase.from("users").update({ balance: newBalance }).eq("id", "thanis")
     }
   }
 
@@ -363,22 +342,33 @@ export function CircleDataProvider({ children }: { children: ReactNode }) {
     )
   }
 
-  const createWallet = (id: string, target: number, perPerson: number) => {
-    setCircles((current) =>
-      current.map((c) => {
-        if (c.id !== id) return c
-        const wallet = {
-          target,
-          perPerson,
-          balance: target,
-          contributions: c.members.map((m) => ({ memberId: m.id, contributed: true })),
-          transactions: [] as import("@/lib/nets-data").TripWalletTransaction[],
-        }
-        const updated: Circle = { ...c, tripWallet: wallet }
-        void persistCircle(updated)
-        return updated
-      })
-    )
+  const createNextRoundRequest = (req: Omit<NextRoundRequest, "id">): string => {
+    const id = makeNrId()
+    setNextRoundRequests((prev) => [...prev, { ...req, id }])
+    return id
+  }
+
+  const acceptNextRound = (id: string) => {
+    setNextRoundRequests((prev) => prev.map((r) => r.id === id ? { ...r, status: "accepted" } : r))
+  }
+
+  const declineNextRound = (id: string) => {
+    setNextRoundRequests((prev) => prev.map((r) => r.id === id ? { ...r, status: "settled-instead" } : r))
+  }
+
+  const applyNextRound = (id: string, amount: number) => {
+    setNextRoundRequests((prev) => prev.map((r) => {
+      if (r.id !== id) return r
+      const remaining = parseFloat((r.remaining - amount).toFixed(2))
+      return { ...r, remaining, status: remaining <= 0.01 ? "applied" : "partial" }
+    }))
+  }
+
+  const resetData = () => {
+    setCircles(initialCircles)
+    setTransactions(initialTransactions)
+    setUser(initialUser)
+    setNextRoundRequests(initialNextRoundRequests)
   }
 
   const addCircleExpense = (id: string, expense: Omit<CircleExpense, "id">, deductFromNETS = false) => {
@@ -386,7 +376,7 @@ export function CircleDataProvider({ children }: { children: ReactNode }) {
     if (deductFromNETS) {
       setUser((current) => {
         const newBalance = parseFloat(Math.max(0, current.balance - expense.amount).toFixed(2))
-        if (supabase) void supabase.from("users").update({ balance: newBalance }).eq("id", "alex")
+        if (supabase) void supabase.from("users").update({ balance: newBalance }).eq("id", "thanis")
         return { ...current, balance: newBalance }
       })
 
@@ -433,24 +423,6 @@ export function CircleDataProvider({ children }: { children: ReactNode }) {
     )
   }
 
-  const deductWalletBalance = (id: string, amount: number, txn: Omit<import("@/lib/nets-data").TripWalletTransaction, "id">) => {
-    setCircles((current) =>
-      current.map((c) => {
-        if (c.id !== id || !c.tripWallet) return c
-        const updated: Circle = {
-          ...c,
-          tripWallet: {
-            ...c.tripWallet,
-            balance: Math.max(0, c.tripWallet.balance - amount),
-            transactions: [...c.tripWallet.transactions, { ...txn, id: createId("w") }],
-          },
-        }
-        void persistCircle(updated)
-        return updated
-      })
-    )
-  }
-
   return (
     <CircleDataContext.Provider
       value={{
@@ -464,9 +436,13 @@ export function CircleDataProvider({ children }: { children: ReactNode }) {
         settleCircle,
         updateBalance,
         setCircleProfile,
-        createWallet,
         addCircleExpense,
-        deductWalletBalance,
+        nextRoundRequests,
+        createNextRoundRequest,
+        acceptNextRound,
+        declineNextRound,
+        applyNextRound,
+        resetData,
       }}
     >
       {children}
