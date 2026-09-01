@@ -10,9 +10,12 @@ import { PayScreen } from "./screens/pay-screen"
 import { HistoryScreen } from "./screens/history-screen"
 import { ProfileScreen } from "./screens/profile-screen"
 import { CircleScreen } from "./screens/circle-screen"
+import { DemoProvider, useDemoContext } from "@/lib/demo-context"
+import { DemoPanel } from "./demo-panel"
 
 function ScreenRouter() {
   const { screen, circleView } = useNav()
+  const { enabled, panelOpen, openPanel } = useDemoContext()
 
   // Hide bottom nav inside Circle sub-views (comfort/experience/confidence/detail/create/settle/reconcile)
   const circleSubView = screen === "circle" && circleView !== "list"
@@ -39,16 +42,32 @@ function ScreenRouter() {
       </AnimatePresence>
 
       {showBottomNav && <BottomNav />}
+
+      {/* Demo mode floating trigger button */}
+      {enabled && !panelOpen && (
+        <button
+          onClick={openPanel}
+          className="absolute bottom-20 right-3 z-50 flex h-8 w-8 items-center justify-center rounded-full bg-nets-navy/60 text-[10px] font-black text-white shadow-lg backdrop-blur-sm active:opacity-70"
+          aria-label="Open demo panel"
+        >
+          D
+        </button>
+      )}
+
+      {/* Demo panel overlay */}
+      {enabled && <DemoPanel />}
     </div>
   )
 }
 
 export function NetsApp() {
   return (
-    <CircleDataProvider>
-      <NavProvider>
-        <ScreenRouter />
-      </NavProvider>
-    </CircleDataProvider>
+    <DemoProvider>
+      <CircleDataProvider>
+        <NavProvider>
+          <ScreenRouter />
+        </NavProvider>
+      </CircleDataProvider>
+    </DemoProvider>
   )
 }
