@@ -3677,43 +3677,52 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
                       </span>
                     </div>
 
-                    {/* Actions — only for balances owed to Thanis */}
-                    {b.toId === "thanis" && !isSettled && !isNrAccepted && (
+                    {/* Actions — only for balances where Thanis is the payer */}
+                    {b.fromId === "thanis" && !isSettled && !isNrAccepted && (
                       <div className="mt-3 flex gap-2">
                         <button onClick={() => openSettleQr(b)}
                           className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-nets-navy py-2.5 text-sm font-bold text-white active:opacity-80">
                           <QrCode className="h-4 w-4" /> Settle Now
                         </button>
-                        {!isWaiting && !isNrWaiting && b.amount <= NEXT_ROUND_THRESHOLD && (
+                      </div>
+                    )}
+
+                    {/* Show "Awaiting payment" when Thanis is the creditor */}
+                    {b.toId === "thanis" && !isSettled && !isNrAccepted && !isWaiting && (
+                      <div className="mt-3 flex gap-2">
+                        {b.amount <= NEXT_ROUND_THRESHOLD && (
                           <button onClick={() => openNrRequest(b)}
                             className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 py-2.5 text-sm font-bold text-amber-700 active:opacity-80">
                             <ArrowRight className="h-4 w-4" /> Next Round
                           </button>
                         )}
+                        <span className="flex flex-1 items-center justify-center text-sm font-semibold text-muted-foreground py-2.5">
+                          Awaiting payment
+                        </span>
                       </div>
                     )}
 
                     {/* Q&A only: future settlement demo — subtle, outside default path */}
-                    {b.toId === "thanis" && (b.status === "pending" || b.status === "outstanding") && (
+                    {b.fromId === "thanis" && (b.status === "pending" || b.status === "outstanding") && (
                       <button onClick={() => openFutureSettle(b)}
                         className="mt-1.5 flex w-full items-center justify-center gap-1 py-1 text-[10px] font-semibold text-muted-foreground/50 active:opacity-70">
                         <Info className="h-2.5 w-2.5" /> Q&A: Future seamless settlement demo
                       </button>
                     )}
 
-                    {/* Demo: simulate debtor response for NR-waiting */}
-                    {b.toId === "thanis" && isNrWaiting && (
+                    {/* Demo: simulate creditor response for NR-waiting */}
+                    {b.fromId === "thanis" && isNrWaiting && (
                       <button onClick={() => { setActiveBalanceId(b.id); setScreen("nr-recipient") }}
                         className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 py-2 text-xs font-semibold text-amber-600 active:opacity-70">
-                        <Smartphone className="h-3 w-3" /> Demo: View as Krishna (respond)
+                        <Smartphone className="h-3 w-3" /> Demo: View as {b.toName} (respond)
                       </button>
                     )}
 
                     {/* Recipient demo trigger for PayNow-waiting balances */}
-                    {b.toId === "thanis" && isWaiting && (
+                    {b.fromId === "thanis" && isWaiting && (
                       <button onClick={() => { setActiveBalanceId(b.id); setRecipientView(true); setScreen("settle-waiting") }}
                         className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-white py-2 text-xs font-semibold text-blue-600 active:opacity-70">
-                        <Smartphone className="h-3 w-3" /> Demo: View as recipient (Thanis)
+                        <Smartphone className="h-3 w-3" /> Demo: View as {b.toName} (confirm)
                       </button>
                     )}
                   </motion.div>
