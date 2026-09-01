@@ -3546,7 +3546,9 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const active = balances.find((b) => b.id === activeBalanceId) ?? null
-  const allResolved = balances.every((b) => b.status === "settled" || b.status === "nr-accepted")
+  const allResolved = balances
+    .filter((b) => b.fromId === "thanis" || b.toId === "thanis")
+    .every((b) => b.status === "settled" || b.status === "nr-accepted")
 
   function openSettleQr(b: CloseBalance) {
     setActiveBalanceId(b.id)
