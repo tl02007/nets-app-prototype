@@ -51,6 +51,8 @@ export type CircleMember = {
   paid: number
 }
 
+export type ExpenseSource = "meal" | "activity" | "detected-nets" | "manual"
+
 export type CircleExpense = {
   id: string
   title: string
@@ -59,6 +61,7 @@ export type CircleExpense = {
   amount: number
   paidById: string
   participants?: string[] // who split this item; empty = all members
+  source?: ExpenseSource // tracking where this expense came from
   time: string
 }
 
@@ -338,7 +341,41 @@ export const circles: Circle[] = [
       { ...friends.krishna, paid: 0 },
       { ...friends.sherwin, paid: 0 },
     ],
-    expenses: [],
+    expenses: [
+      {
+        id: "exp-truffle",
+        title: "Truffle Fries",
+        merchant: "Seoul Table",
+        category: "Meal",
+        amount: 16,
+        paidById: "thanis",
+        participants: ["thanis", "bryan", "krishna", "sherwin"],
+        source: "meal",
+        time: "6:45 PM"
+      },
+      {
+        id: "exp-arcade",
+        title: "Arcade Credit Bundle",
+        merchant: "Arcade Zone @ Bugis+",
+        category: "Activity",
+        amount: 30,
+        paidById: "bryan",
+        participants: ["bryan", "thanis"],
+        source: "activity",
+        time: "8:15 PM"
+      },
+      {
+        id: "exp-detected-nets",
+        title: "Detected NETS Payment",
+        merchant: "Seoul Table",
+        category: "Detected NETS",
+        amount: 20,
+        paidById: "thanis",
+        participants: ["krishna", "sherwin"],
+        source: "detected-nets",
+        time: "6:50 PM"
+      }
+    ],
   },
   // ── c2: Settled — shows what a completed circle looks like ────────
   {
@@ -495,6 +532,106 @@ export function computeSettlements(c: Circle): Settlement[] {
 
 export function memberName(c: Circle, id: string) {
   return c.members.find((m) => m.id === id)?.name ?? id
+}
+
+export type MemberBalance = {
+  fromId: string
+  toId: string
+  amount: number
+  breakdown: { expenseTitle: string; amount: number }[]
+}
+
+export function computeBalancesFromExpenses(c: Circle): MemberBalance[] {
+  const balances: Record<string, Record<string, number>> = {}
+  const breakdowns: Record<string, Record<string, { expenseTitle: string; amount: number }[]>> = {}
+
+  for (const m of c.members) {
+    balances[m.id] = {}
+    breakdowns[m.id] = {}
+    for (const m2 of c.members) {
+      if (m.id !== m2.id) {
+        balances[m.id][m2.id] = 0
+        breakdowns[m.id][m2.id] = []
+      }
+    }
+  }
+
+  for (const exp of c.expenses) {
+    const participants = exp.participants && exp.participants.length > 0 ? exp.participants : c.members.map(m => m.id)
+    const perPersonAmount = exp.amount / participants.length
+
+    for (const participantId of participants) {
+      if (participantId !== exp.paidById) {
+        balances[participantId][exp.paidById] += perPersonAmount
+        breakdowns[participantId][exp.paidById].push({ expenseTitle: exp.title, amount: perPersonAmount })
+      }
+    }
+  }
+
+  const result: MemberBalance[] = []
+  for (const fromId of Object.keys(balances)) {
+    for (const toId of Object.keys(balances[fromId])) {
+      const amount = balances[fromId][toId]
+      if (Math.abs(amount) > 0.01) {
+        result.push({
+          fromId,
+          toId,
+          amount,
+          breakdown: breakdowns[fromId][toId]
+        })
+      }
+    }
+  }
+
+  return netBalances(result)
+}
+
+function netBalances(balances: MemberBalance[]): MemberBalance[] {
+  const netMap: Record<string, Record<string, MemberBalance>> = {}
+
+  for (const b of balances) {
+    const key1 = `${b.fromId}-${b.toId}`
+    const key2 = `${b.toId}-${b.fromId}`
+
+    if (!netMap[b.fromId]) netMap[b.fromId] = {}
+    netMap[b.fromId][b.toId] = b
+  }
+
+  const result: MemberBalance[] = []
+  const processed = new Set<string>()
+
+  for (const b of balances) {
+    const key = `${b.fromId}-${b.toId}`
+    const reverseKey = `${b.toId}-${b.fromId}`
+
+    if (processed.has(key) || processed.has(reverseKey)) continue
+
+    const reverse = netMap[b.toId]?.[b.fromId]
+    const netAmount = b.amount - (reverse?.amount ?? 0)
+
+    if (Math.abs(netAmount) > 0.01) {
+      if (netAmount > 0) {
+        result.push({
+          fromId: b.fromId,
+          toId: b.toId,
+          amount: netAmount,
+          breakdown: b.breakdown
+        })
+      } else {
+        result.push({
+          fromId: b.toId,
+          toId: b.fromId,
+          amount: -netAmount,
+          breakdown: reverse?.breakdown ?? []
+        })
+      }
+    }
+
+    processed.add(key)
+    processed.add(reverseKey)
+  }
+
+  return result
 }
 
 export function confidenceConfig(level: ConfidenceLevel) {

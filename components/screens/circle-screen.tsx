@@ -23,9 +23,11 @@ import {
   computeCircleCheck, circleCheckConfig, circleCheckPrivacyNote,
   spendBandSourceLabel, spendBandSourceNote, privateCommitmentGuidance,
   NEXT_ROUND_THRESHOLD,
+  computeBalancesFromExpenses,
   type Circle, type CircleExpense, type ComfortProfile, type Activity,
   type CircleCheckOutcome, type SpendBand, type NegotiationOption, type CircleReadyOffer,
   type CircleIdea, type IdeaVoteScore, type GroupOffer, type NextRoundRequest,
+  type MemberBalance,
 } from "@/lib/nets-data"
 
 const fmt = (n: number) =>
@@ -605,6 +607,13 @@ function SpendBandView({
   onDone: (band: { min: number; max: number }) => void
 }) {
   const [band, setBand] = useState(initialAmount)
+  const [showCustom, setShowCustom] = useState(false)
+
+  const presets = [
+    { min: 30, max: 40, label: "S$30–40" },
+    { min: 40, max: 50, label: "S$40–50" },
+    { min: 50, max: 60, label: "S$50–60" },
+  ]
 
   return (
     <motion.div
@@ -615,73 +624,97 @@ function SpendBandView({
     >
       <div className="bg-nets-page">
         <StatusBar />
-        <Header title="Your Spend Band" onBack={onBack} subtitle="Private · Only you see this" />
+        <Header title="Find your comfort zone" onBack={onBack} subtitle="Private · Only you see this" />
         <JourneySteps active={1} />
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2">
         {/* Privacy declaration */}
-        <div className="flex items-center gap-2 rounded-2xl bg-nets-navy/5 border border-nets-navy/10 px-4 py-3 mb-5">
-          <ShieldCheck className="h-5 w-5 text-nets-navy shrink-0" />
+        <div className="flex items-center gap-2 rounded-2xl bg-nets-navy/5 border border-nets-navy/10 px-4 py-3 mb-6">
+          <Lock className="h-4 w-4 text-nets-navy shrink-0" />
           <div>
-            <p className="text-xs font-bold text-nets-navy">Completely private</p>
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
-              No one else in the Circle sees this — not even the organiser.
-            </p>
+            <p className="text-xs font-bold text-nets-navy">Private to you</p>
+            <p className="text-[11px] text-muted-foreground">No one sees your spend band</p>
           </div>
         </div>
 
-        {/* Spend band input */}
-        <div className="rounded-3xl bg-nets-navy p-6 text-white text-center">
-          <p className="text-xs text-white/60 font-semibold uppercase tracking-wide mb-1">
-            What are you comfortable spending?
-          </p>
-          <p className="text-5xl font-extrabold tracking-tight mt-3">
-            S${band.min} – S${band.max}
-          </p>
-          <p className="text-sm text-white/50 mt-1">per person</p>
+        {/* Quick presets */}
+        <div className="space-y-3 mb-6">
+          {presets.map((preset) => (
+            <motion.button
+              key={preset.label}
+              onClick={() => { setBand(preset); setShowCustom(false) }}
+              whileTap={{ scale: 0.98 }}
+              className={`w-full rounded-2xl p-4 font-bold text-lg transition-all ${
+                band.min === preset.min && band.max === preset.max
+                  ? "bg-nets-navy text-white shadow-lg"
+                  : "bg-card border border-border/50 text-nets-navy"
+              }`}
+            >
+              {preset.label}
+            </motion.button>
+          ))}
+        </div>
 
-          {/* Min slider */}
-          <div className="mt-5 px-2">
-            <p className="text-[10px] text-white/50 mb-1 text-left">Minimum (S$)</p>
-            <input
-              type="range"
-              min={10}
-              max={200}
-              step={5}
-              value={band.min}
-              onChange={(e) => {
-                const newMin = Number(e.target.value)
-                setBand((b) => ({ min: newMin, max: Math.max(b.max, newMin + 5) }))
-              }}
-              className="w-full accent-white h-2 rounded-full cursor-pointer"
-            />
-            <div className="flex justify-between text-[10px] text-white/40 mt-1">
-              <span>S$10</span>
-              <span>S$200</span>
-            </div>
-          </div>
+        {/* Custom option */}
+        <div className="rounded-2xl border-2 border-dashed border-nets-navy/20 bg-nets-navy/5 p-4 mb-5">
+          <button
+            onClick={() => setShowCustom(!showCustom)}
+            className="w-full text-left font-semibold text-nets-navy text-sm"
+          >
+            {showCustom ? "−" : "+"} Custom range
+          </button>
 
-          {/* Max slider */}
-          <div className="mt-4 px-2">
-            <p className="text-[10px] text-white/50 mb-1 text-left">Maximum (S$)</p>
-            <input
-              type="range"
-              min={20}
-              max={300}
-              step={5}
-              value={band.max}
-              onChange={(e) => {
-                const newMax = Number(e.target.value)
-                setBand((b) => ({ min: Math.min(b.min, newMax - 5), max: newMax }))
-              }}
-              className="w-full accent-white h-2 rounded-full cursor-pointer"
-            />
-            <div className="flex justify-between text-[10px] text-white/40 mt-1">
-              <span>S$20</span>
-              <span>S$300</span>
+          {showCustom && (
+            <div className="mt-4 space-y-3">
+              <div>
+                <p className="text-[11px] font-bold text-muted-foreground mb-2">Minimum (S$)</p>
+                <input
+                  type="range"
+                  min={10}
+                  max={200}
+                  step={5}
+                  value={band.min}
+                  onChange={(e) => {
+                    const newMin = Number(e.target.value)
+                    setBand((b) => ({ min: newMin, max: Math.max(b.max, newMin + 5) }))
+                  }}
+                  className="w-full accent-nets-navy"
+                />
+                <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                  <span>S$10</span>
+                  <span className="font-bold">S${band.min}</span>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[11px] font-bold text-muted-foreground mb-2">Maximum (S$)</p>
+                <input
+                  type="range"
+                  min={20}
+                  max={300}
+                  step={5}
+                  value={band.max}
+                  onChange={(e) => {
+                    const newMax = Number(e.target.value)
+                    setBand((b) => ({ min: Math.min(b.min, newMax - 5), max: newMax }))
+                  }}
+                  className="w-full accent-nets-navy"
+                />
+                <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                  <span>S$20</span>
+                  <span className="font-bold">S${band.max}</span>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
+        </div>
+
+        {/* Current selection display */}
+        <div className="rounded-2xl bg-nets-green/10 border border-nets-green/20 p-4 text-center mb-5">
+          <p className="text-xs text-nets-green/60 font-semibold mb-1">Your selection</p>
+          <p className="text-3xl font-extrabold text-nets-green">S${band.min} – S${band.max}</p>
+          <p className="text-xs text-nets-green/70 mt-1">per person</p>
         </div>
 
         {/* Privacy principles */}
@@ -3466,12 +3499,26 @@ type CloseBalance = {
   status: "pending" | "waiting-confirm" | "settled" | "outstanding" | "nr-waiting" | "nr-accepted"
 }
 
-// Fixture balances — produce clean Next Round demo: S$11 (eligible ≤S$20), S$42 (ineligible), S$5 (third-party)
-const CLOSE_FIXTURE_BALANCES: CloseBalance[] = [
-  { id: "b1", fromId: "krishna", fromName: "Krishna", fromInitial: "K", fromColor: "var(--nets-blue)",  toId: "thanis", toName: "Thanis", amount: 11, status: "pending" },
-  { id: "b2", fromId: "sherwin", fromName: "Sherwin", fromInitial: "S", fromColor: "var(--nets-green)", toId: "thanis", toName: "Thanis", amount: 42, status: "pending" },
-  { id: "b3", fromId: "sherwin", fromName: "Sherwin", fromInitial: "S", fromColor: "var(--nets-green)", toId: "bryan",  toName: "Bryan",  amount:  5, status: "pending" },
-]
+function computeCloseBalances(circle: Circle): CloseBalance[] {
+  const memberMap = new Map(circle.members.map(m => [m.id, m]))
+  const memberBalances = computeBalancesFromExpenses(circle)
+
+  return memberBalances.map((mb, idx) => {
+    const fromMember = memberMap.get(mb.fromId)
+    const toMember = memberMap.get(mb.toId)
+    return {
+      id: `balance-${idx}`,
+      fromId: mb.fromId,
+      fromName: fromMember?.name ?? mb.fromId,
+      fromInitial: fromMember?.initial ?? "?",
+      fromColor: fromMember?.color ?? "var(--nets-navy)",
+      toId: mb.toId,
+      toName: toMember?.name ?? mb.toId,
+      amount: mb.amount,
+      status: "pending" as const
+    }
+  })
+}
 
 // PayNow QR — a static placeholder representing Thanis' saved receiving QR.
 // This is a real-looking QR image placeholder using the QrCode icon.
@@ -3521,6 +3568,54 @@ function OneWeekLaterButton() {
   )
 }
 
+function downloadPayNowQr(name: string, amount: number) {
+  const canvas = document.createElement("canvas")
+  canvas.width = 512
+  canvas.height = 600
+  const ctx = canvas.getContext("2d")
+  if (!ctx) return
+
+  ctx.fillStyle = "white"
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  ctx.fillStyle = "#001f3f"
+  ctx.font = "bold 24px sans-serif"
+  ctx.textAlign = "center"
+  ctx.fillText("PayNow QR", canvas.width / 2, 50)
+
+  ctx.fillStyle = "#cccccc"
+  ctx.fillRect(100, 90, 312, 312)
+
+  for (let i = 0; i < 16; i++) {
+    for (let j = 0; j < 16; j++) {
+      if ((i + j) % 2 === 0) {
+        ctx.fillStyle = "#001f3f"
+        ctx.fillRect(100 + i * 19.5, 90 + j * 19.5, 19.5, 19.5)
+      }
+    }
+  }
+
+  ctx.fillStyle = "#001f3f"
+  ctx.font = "14px sans-serif"
+  ctx.fillText(`To: ${name}`, canvas.width / 2, 450)
+  ctx.fillText(`Amount: S$${amount.toFixed(2)}`, canvas.width / 2, 480)
+  ctx.font = "12px sans-serif"
+  ctx.fillStyle = "#666666"
+  ctx.fillText("Scan with your banking app", canvas.width / 2, 530)
+
+  canvas.toBlob((blob) => {
+    if (!blob) return
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `paynow-qr-${name.replace(/\s+/g, "-")}.png`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  })
+}
+
 function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () => void; onDone: () => void }) {
   const { createNextRoundRequest, acceptNextRound, declineNextRound } = useCircleData()
   const { scene, clearScene } = useDemoContext()
@@ -3532,10 +3627,11 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
   const demoIsRecipient = demoScreenRaw?.endsWith("-recipient") ?? false
   const demoScreen = demoScreenRaw?.replace(/-recipient$/, "") as CloseScreen | null
 
-  const [balances, setBalances] = useState<CloseBalance[]>(CLOSE_FIXTURE_BALANCES)
+  const computedBalances = computeCloseBalances(circle)
+  const [balances, setBalances] = useState<CloseBalance[]>(computedBalances)
   const [screen, setScreen] = useState<CloseScreen>(() => demoScreen ?? "home")
   const [activeBalanceId, setActiveBalanceId] = useState<string | null>(() =>
-    demoScreen && demoScreen !== "home" ? "b1" : null
+    demoScreen && demoScreen !== "home" ? computedBalances[0]?.id ?? null : null
   )
   const [recipientView, setRecipientView] = useState(() => demoIsRecipient)
   const [activeNrId, setActiveNrId] = useState<string | null>(() => demoNrId)
@@ -3660,43 +3756,52 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
                       </span>
                     </div>
 
-                    {/* Actions — only for balances owed to Thanis */}
-                    {b.toId === "thanis" && !isSettled && !isNrAccepted && (
+                    {/* Actions — only for balances where Thanis is the payer */}
+                    {b.fromId === "thanis" && !isSettled && !isNrAccepted && (
                       <div className="mt-3 flex gap-2">
                         <button onClick={() => openSettleQr(b)}
                           className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-nets-navy py-2.5 text-sm font-bold text-white active:opacity-80">
                           <QrCode className="h-4 w-4" /> Settle Now
                         </button>
-                        {!isWaiting && !isNrWaiting && b.amount <= NEXT_ROUND_THRESHOLD && (
+                      </div>
+                    )}
+
+                    {/* Show "Awaiting payment" when Thanis is the creditor */}
+                    {b.toId === "thanis" && !isSettled && !isNrAccepted && !isWaiting && (
+                      <div className="mt-3 flex gap-2">
+                        {b.amount <= NEXT_ROUND_THRESHOLD && (
                           <button onClick={() => openNrRequest(b)}
                             className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 py-2.5 text-sm font-bold text-amber-700 active:opacity-80">
                             <ArrowRight className="h-4 w-4" /> Next Round
                           </button>
                         )}
+                        <span className="flex flex-1 items-center justify-center text-sm font-semibold text-muted-foreground py-2.5">
+                          Awaiting payment
+                        </span>
                       </div>
                     )}
 
                     {/* Q&A only: future settlement demo — subtle, outside default path */}
-                    {b.toId === "thanis" && (b.status === "pending" || b.status === "outstanding") && (
+                    {b.fromId === "thanis" && (b.status === "pending" || b.status === "outstanding") && (
                       <button onClick={() => openFutureSettle(b)}
                         className="mt-1.5 flex w-full items-center justify-center gap-1 py-1 text-[10px] font-semibold text-muted-foreground/50 active:opacity-70">
                         <Info className="h-2.5 w-2.5" /> Q&A: Future seamless settlement demo
                       </button>
                     )}
 
-                    {/* Demo: simulate debtor response for NR-waiting */}
-                    {b.toId === "thanis" && isNrWaiting && (
+                    {/* Demo: simulate creditor response for NR-waiting */}
+                    {b.fromId === "thanis" && isNrWaiting && (
                       <button onClick={() => { setActiveBalanceId(b.id); setScreen("nr-recipient") }}
                         className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 py-2 text-xs font-semibold text-amber-600 active:opacity-70">
-                        <Smartphone className="h-3 w-3" /> Demo: View as Krishna (respond)
+                        <Smartphone className="h-3 w-3" /> Demo: View as {b.toName} (respond)
                       </button>
                     )}
 
                     {/* Recipient demo trigger for PayNow-waiting balances */}
-                    {b.toId === "thanis" && isWaiting && (
+                    {b.fromId === "thanis" && isWaiting && (
                       <button onClick={() => { setActiveBalanceId(b.id); setRecipientView(true); setScreen("settle-waiting") }}
                         className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-white py-2 text-xs font-semibold text-blue-600 active:opacity-70">
-                        <Smartphone className="h-3 w-3" /> Demo: View as recipient (Thanis)
+                        <Smartphone className="h-3 w-3" /> Demo: View as {b.toName} (confirm)
                       </button>
                     )}
                   </motion.div>
@@ -3745,8 +3850,12 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
               <p className="text-sm text-muted-foreground">to {active.toName}</p>
             </div>
 
-            <div className="mb-5 flex justify-center">
+            <div className="mb-5 flex flex-col items-center gap-4">
               <PayNowQr name={active.toName} />
+              <button onClick={() => downloadPayNowQr(active.toName, active.amount)}
+                className="flex items-center gap-2 rounded-xl border border-nets-navy/20 bg-nets-navy/5 px-4 py-2 text-sm font-semibold text-nets-navy active:opacity-70">
+                <Download className="h-4 w-4" /> Download QR
+              </button>
             </div>
 
             <div className="mb-5 rounded-2xl bg-nets-navy/5 p-4 space-y-2">
