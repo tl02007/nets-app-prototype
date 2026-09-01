@@ -607,6 +607,13 @@ function SpendBandView({
   onDone: (band: { min: number; max: number }) => void
 }) {
   const [band, setBand] = useState(initialAmount)
+  const [showCustom, setShowCustom] = useState(false)
+
+  const presets = [
+    { min: 30, max: 40, label: "S$30–40" },
+    { min: 40, max: 50, label: "S$40–50" },
+    { min: 50, max: 60, label: "S$50–60" },
+  ]
 
   return (
     <motion.div
@@ -617,73 +624,97 @@ function SpendBandView({
     >
       <div className="bg-nets-page">
         <StatusBar />
-        <Header title="Your Spend Band" onBack={onBack} subtitle="Private · Only you see this" />
+        <Header title="Find your comfort zone" onBack={onBack} subtitle="Private · Only you see this" />
         <JourneySteps active={1} />
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pb-28 pt-2">
         {/* Privacy declaration */}
-        <div className="flex items-center gap-2 rounded-2xl bg-nets-navy/5 border border-nets-navy/10 px-4 py-3 mb-5">
-          <ShieldCheck className="h-5 w-5 text-nets-navy shrink-0" />
+        <div className="flex items-center gap-2 rounded-2xl bg-nets-navy/5 border border-nets-navy/10 px-4 py-3 mb-6">
+          <Lock className="h-4 w-4 text-nets-navy shrink-0" />
           <div>
-            <p className="text-xs font-bold text-nets-navy">Completely private</p>
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
-              No one else in the Circle sees this — not even the organiser.
-            </p>
+            <p className="text-xs font-bold text-nets-navy">Private to you</p>
+            <p className="text-[11px] text-muted-foreground">No one sees your spend band</p>
           </div>
         </div>
 
-        {/* Spend band input */}
-        <div className="rounded-3xl bg-nets-navy p-6 text-white text-center">
-          <p className="text-xs text-white/60 font-semibold uppercase tracking-wide mb-1">
-            What are you comfortable spending?
-          </p>
-          <p className="text-5xl font-extrabold tracking-tight mt-3">
-            S${band.min} – S${band.max}
-          </p>
-          <p className="text-sm text-white/50 mt-1">per person</p>
+        {/* Quick presets */}
+        <div className="space-y-3 mb-6">
+          {presets.map((preset) => (
+            <motion.button
+              key={preset.label}
+              onClick={() => { setBand(preset); setShowCustom(false) }}
+              whileTap={{ scale: 0.98 }}
+              className={`w-full rounded-2xl p-4 font-bold text-lg transition-all ${
+                band.min === preset.min && band.max === preset.max
+                  ? "bg-nets-navy text-white shadow-lg"
+                  : "bg-card border border-border/50 text-nets-navy"
+              }`}
+            >
+              {preset.label}
+            </motion.button>
+          ))}
+        </div>
 
-          {/* Min slider */}
-          <div className="mt-5 px-2">
-            <p className="text-[10px] text-white/50 mb-1 text-left">Minimum (S$)</p>
-            <input
-              type="range"
-              min={10}
-              max={200}
-              step={5}
-              value={band.min}
-              onChange={(e) => {
-                const newMin = Number(e.target.value)
-                setBand((b) => ({ min: newMin, max: Math.max(b.max, newMin + 5) }))
-              }}
-              className="w-full accent-white h-2 rounded-full cursor-pointer"
-            />
-            <div className="flex justify-between text-[10px] text-white/40 mt-1">
-              <span>S$10</span>
-              <span>S$200</span>
-            </div>
-          </div>
+        {/* Custom option */}
+        <div className="rounded-2xl border-2 border-dashed border-nets-navy/20 bg-nets-navy/5 p-4 mb-5">
+          <button
+            onClick={() => setShowCustom(!showCustom)}
+            className="w-full text-left font-semibold text-nets-navy text-sm"
+          >
+            {showCustom ? "−" : "+"} Custom range
+          </button>
 
-          {/* Max slider */}
-          <div className="mt-4 px-2">
-            <p className="text-[10px] text-white/50 mb-1 text-left">Maximum (S$)</p>
-            <input
-              type="range"
-              min={20}
-              max={300}
-              step={5}
-              value={band.max}
-              onChange={(e) => {
-                const newMax = Number(e.target.value)
-                setBand((b) => ({ min: Math.min(b.min, newMax - 5), max: newMax }))
-              }}
-              className="w-full accent-white h-2 rounded-full cursor-pointer"
-            />
-            <div className="flex justify-between text-[10px] text-white/40 mt-1">
-              <span>S$20</span>
-              <span>S$300</span>
+          {showCustom && (
+            <div className="mt-4 space-y-3">
+              <div>
+                <p className="text-[11px] font-bold text-muted-foreground mb-2">Minimum (S$)</p>
+                <input
+                  type="range"
+                  min={10}
+                  max={200}
+                  step={5}
+                  value={band.min}
+                  onChange={(e) => {
+                    const newMin = Number(e.target.value)
+                    setBand((b) => ({ min: newMin, max: Math.max(b.max, newMin + 5) }))
+                  }}
+                  className="w-full accent-nets-navy"
+                />
+                <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                  <span>S$10</span>
+                  <span className="font-bold">S${band.min}</span>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[11px] font-bold text-muted-foreground mb-2">Maximum (S$)</p>
+                <input
+                  type="range"
+                  min={20}
+                  max={300}
+                  step={5}
+                  value={band.max}
+                  onChange={(e) => {
+                    const newMax = Number(e.target.value)
+                    setBand((b) => ({ min: Math.min(b.min, newMax - 5), max: newMax }))
+                  }}
+                  className="w-full accent-nets-navy"
+                />
+                <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                  <span>S$20</span>
+                  <span className="font-bold">S${band.max}</span>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
+        </div>
+
+        {/* Current selection display */}
+        <div className="rounded-2xl bg-nets-green/10 border border-nets-green/20 p-4 text-center mb-5">
+          <p className="text-xs text-nets-green/60 font-semibold mb-1">Your selection</p>
+          <p className="text-3xl font-extrabold text-nets-green">S${band.min} – S${band.max}</p>
+          <p className="text-xs text-nets-green/70 mt-1">per person</p>
         </div>
 
         {/* Privacy principles */}
