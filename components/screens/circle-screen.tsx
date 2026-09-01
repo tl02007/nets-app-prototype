@@ -23,9 +23,11 @@ import {
   computeCircleCheck, circleCheckConfig, circleCheckPrivacyNote,
   spendBandSourceLabel, spendBandSourceNote, privateCommitmentGuidance,
   NEXT_ROUND_THRESHOLD,
+  computeBalancesFromExpenses,
   type Circle, type CircleExpense, type ComfortProfile, type Activity,
   type CircleCheckOutcome, type SpendBand, type NegotiationOption, type CircleReadyOffer,
   type CircleIdea, type IdeaVoteScore, type GroupOffer, type NextRoundRequest,
+  type MemberBalance,
 } from "@/lib/nets-data"
 
 const fmt = (n: number) =>
@@ -3466,12 +3468,26 @@ type CloseBalance = {
   status: "pending" | "waiting-confirm" | "settled" | "outstanding" | "nr-waiting" | "nr-accepted"
 }
 
-// Fixture balances — produce clean Next Round demo: S$11 (eligible ≤S$20), S$42 (ineligible), S$5 (third-party)
-const CLOSE_FIXTURE_BALANCES: CloseBalance[] = [
-  { id: "b1", fromId: "krishna", fromName: "Krishna", fromInitial: "K", fromColor: "var(--nets-blue)",  toId: "thanis", toName: "Thanis", amount: 11, status: "pending" },
-  { id: "b2", fromId: "sherwin", fromName: "Sherwin", fromInitial: "S", fromColor: "var(--nets-green)", toId: "thanis", toName: "Thanis", amount: 42, status: "pending" },
-  { id: "b3", fromId: "sherwin", fromName: "Sherwin", fromInitial: "S", fromColor: "var(--nets-green)", toId: "bryan",  toName: "Bryan",  amount:  5, status: "pending" },
-]
+function computeCloseBalances(circle: Circle): CloseBalance[] {
+  const memberMap = new Map(circle.members.map(m => [m.id, m]))
+  const memberBalances = computeBalancesFromExpenses(circle)
+
+  return memberBalances.map((mb, idx) => {
+    const fromMember = memberMap.get(mb.fromId)
+    const toMember = memberMap.get(mb.toId)
+    return {
+      id: `balance-${idx}`,
+      fromId: mb.fromId,
+      fromName: fromMember?.name ?? mb.fromId,
+      fromInitial: fromMember?.initial ?? "?",
+      fromColor: fromMember?.color ?? "var(--nets-navy)",
+      toId: mb.toId,
+      toName: toMember?.name ?? mb.toId,
+      amount: mb.amount,
+      status: "pending" as const
+    }
+  })
+}
 
 // PayNow QR — a static placeholder representing Thanis' saved receiving QR.
 // This is a real-looking QR image placeholder using the QrCode icon.
@@ -3532,10 +3548,11 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
   const demoIsRecipient = demoScreenRaw?.endsWith("-recipient") ?? false
   const demoScreen = demoScreenRaw?.replace(/-recipient$/, "") as CloseScreen | null
 
-  const [balances, setBalances] = useState<CloseBalance[]>(CLOSE_FIXTURE_BALANCES)
+  const computedBalances = computeCloseBalances(circle)
+  const [balances, setBalances] = useState<CloseBalance[]>(computedBalances)
   const [screen, setScreen] = useState<CloseScreen>(() => demoScreen ?? "home")
   const [activeBalanceId, setActiveBalanceId] = useState<string | null>(() =>
-    demoScreen && demoScreen !== "home" ? "b1" : null
+    demoScreen && demoScreen !== "home" ? computedBalances[0]?.id ?? null : null
   )
   const [recipientView, setRecipientView] = useState(() => demoIsRecipient)
   const [activeNrId, setActiveNrId] = useState<string | null>(() => demoNrId)
