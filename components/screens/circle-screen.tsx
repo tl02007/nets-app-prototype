@@ -606,14 +606,11 @@ function SpendBandView({
   onBack: () => void
   onDone: (band: { min: number; max: number }) => void
 }) {
-  const [band, setBand] = useState(initialAmount)
-  const [showCustom, setShowCustom] = useState(false)
-
-  const presets = [
-    { min: 30, max: 40, label: "S$30–40" },
-    { min: 40, max: 50, label: "S$40–50" },
-    { min: 50, max: 60, label: "S$50–60" },
-  ]
+  const sliderMin = 20
+  const sliderMax = 200
+  const step = 10
+  const [amount, setAmount] = useState(initialAmount.max)
+  const band = { min: Math.max(sliderMin, amount - 10), max: amount }
 
   return (
     <motion.div
@@ -638,83 +635,66 @@ function SpendBandView({
           </div>
         </div>
 
-        {/* Quick presets */}
-        <div className="space-y-3 mb-6">
-          {presets.map((preset) => (
-            <motion.button
-              key={preset.label}
-              onClick={() => { setBand(preset); setShowCustom(false) }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full rounded-2xl p-4 font-bold text-lg transition-all ${
-                band.min === preset.min && band.max === preset.max
-                  ? "bg-nets-navy text-white shadow-lg"
-                  : "bg-card border border-border/50 text-nets-navy"
-              }`}
+        {/* Amount display */}
+        <div className="rounded-2xl bg-nets-navy px-5 py-6 mb-5 text-center text-white">
+          <p className="text-[11px] font-semibold text-white/50 mb-1">I&apos;m comfortable spending up to</p>
+          <p className="text-5xl font-extrabold tracking-tight">S${amount}</p>
+          <p className="text-xs text-white/50 mt-1">per person</p>
+
+          {/* Slider */}
+          <input
+            type="range"
+            min={sliderMin}
+            max={sliderMax}
+            step={step}
+            value={amount}
+            onChange={(e) => setAmount(Number(e.target.value))}
+            className="mt-5 w-full accent-white"
+          />
+          <div className="flex justify-between text-[10px] text-white/30 mt-1">
+            <span>S${sliderMin}</span>
+            <span>S${sliderMax}</span>
+          </div>
+
+          {/* Comfort emoji indicator */}
+          <div className="mt-4 flex items-center justify-center gap-3">
+            {[
+              { emoji: "😄", label: "Very comfortable", threshold: 120 },
+              { emoji: "🙂", label: "Comfortable", threshold: 80 },
+              { emoji: "😐", label: "Okay", threshold: 50 },
+              { emoji: "😟", label: "A stretch", threshold: 20 },
+              { emoji: "😬", label: "Too much", threshold: 0 },
+            ].map((e) => {
+              const active = amount >= e.threshold && amount < e.threshold + 40
+              return (
+                <button
+                  key={e.emoji}
+                  onClick={() => setAmount(e.threshold + 10 <= sliderMax ? e.threshold + 10 : sliderMax)}
+                  className={`flex h-10 w-10 items-center justify-center rounded-full text-xl transition-all ${active ? "bg-white/25 scale-125" : "bg-white/10 opacity-50"}`}
+                  title={e.label}
+                >
+                  {e.emoji}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Fine-tune +/- */}
+          <div className="mt-4 flex items-center justify-center gap-4">
+            <button
+              onClick={() => setAmount((a) => Math.max(sliderMin, a - step))}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 active:bg-white/25"
             >
-              {preset.label}
-            </motion.button>
-          ))}
-        </div>
-
-        {/* Custom option */}
-        <div className="rounded-2xl border-2 border-dashed border-nets-navy/20 bg-nets-navy/5 p-4 mb-5">
-          <button
-            onClick={() => setShowCustom(!showCustom)}
-            className="w-full text-left font-semibold text-nets-navy text-sm"
-          >
-            {showCustom ? "−" : "+"} Custom range
-          </button>
-
-          {showCustom && (
-            <div className="mt-4 space-y-3">
-              <div>
-                <p className="text-[11px] font-bold text-muted-foreground mb-2">Minimum (S$)</p>
-                <input
-                  type="range"
-                  min={10}
-                  max={200}
-                  step={5}
-                  value={band.min}
-                  onChange={(e) => {
-                    const newMin = Number(e.target.value)
-                    setBand((b) => ({ min: newMin, max: Math.max(b.max, newMin + 5) }))
-                  }}
-                  className="w-full accent-nets-navy"
-                />
-                <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
-                  <span>S$10</span>
-                  <span className="font-bold">S${band.min}</span>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-[11px] font-bold text-muted-foreground mb-2">Maximum (S$)</p>
-                <input
-                  type="range"
-                  min={20}
-                  max={300}
-                  step={5}
-                  value={band.max}
-                  onChange={(e) => {
-                    const newMax = Number(e.target.value)
-                    setBand((b) => ({ min: Math.min(b.min, newMax - 5), max: newMax }))
-                  }}
-                  className="w-full accent-nets-navy"
-                />
-                <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
-                  <span>S$20</span>
-                  <span className="font-bold">S${band.max}</span>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Current selection display */}
-        <div className="rounded-2xl bg-nets-green/10 border border-nets-green/20 p-4 text-center mb-5">
-          <p className="text-xs text-nets-green/60 font-semibold mb-1">Your selection</p>
-          <p className="text-3xl font-extrabold text-nets-green">S${band.min} – S${band.max}</p>
-          <p className="text-xs text-nets-green/70 mt-1">per person</p>
+              <Minus className="h-4 w-4" />
+            </button>
+            <span className="text-xs text-white/40">fine tune ± $10</span>
+            <button
+              onClick={() => setAmount((a) => Math.min(sliderMax, a + step))}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 active:bg-white/25"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {/* Privacy principles */}
