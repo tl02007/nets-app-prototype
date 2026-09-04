@@ -17,7 +17,7 @@ import { NetsQrPayment } from "../nets-qr-payment"
 import { useCircleData } from "../circle-data-context"
 import { useDemoContext } from "@/lib/demo-context"
 import {
-  circleTotal, perHead, computeSettlements, memberName,
+  circleTotal, perHead, computeSettlements, computeCompressedSettlements, memberName,
   circleRecommendations, confidenceConfig, affordabilityMessage,
   activities, computeConfidencePercent, confidenceLabel, confidenceColor, PROFILE_RANGES,
   computeCircleCheck, circleCheckConfig, circleCheckPrivacyNote,
@@ -1141,7 +1141,8 @@ type CpCartEntry = { id: string; name: string; price: number }
 type CpSharedEntry = { id: string; name: string; totalPrice: number; membersJoined: number; invited: boolean }
 type CpPhase =
   | "overview" | "stop1-menu"
-  | "stop1-time-to-pay" | "stop1-qr" | "stop1-confirm" | "stop1-success" | "stop1-matched"
+  | "stop1-time-to-pay" | "stop1-qr" | "stop1-confirm" | "stop1-success"
+  | "stop1-add-to-circle" | "stop1-matched"
   | "stop1-mismatch" | "stop1-mismatch-resolve"
   | "stop1-done" | "unplanned-payment"
   | "stop2-activity" | "stop2-qr" | "stop2-confirm" | "stop2-success"
@@ -1219,8 +1220,8 @@ function CirclePayView({
   const MISMATCH_EXTRA = 8  // Q&A scenario: group total is $8 more than locked
 
   const cartTotal = cart.reduce((s, i) => s + i.price, 0)
-  const sharedTotal = sharedDishes.filter(d => d.invited && d.membersJoined > 1)
-    .reduce((s, d) => s + d.totalPrice / d.membersJoined, 0)
+  const sharedTotal = sharedDishes.filter(d => d.invited)
+    .reduce((s, d) => s + d.totalPrice / Math.max(d.membersJoined, 1), 0)
   const dinnerActual = cartTotal + sharedTotal
   const dinnerDisplay = dinnerActual > 0 ? dinnerActual : DINNER_EST
   const outingTotal = dinnerDisplay + ARCADE_COST
@@ -1257,8 +1258,6 @@ function CirclePayView({
   function confirmDinnerPay() {
     const ref = genTxnRef()
     setDinnerTxnRef(ref)
-    const now = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" })
-    onAddExpense({ title: "Seoul Table — Korean BBQ Dinner", merchant: "Seoul Table", category: "Food", amount: lockedDinnerAmt, paidById: "thanis", time: now }, true)
     setPhase("stop1-success")
   }
   function confirmArcadePay() {
@@ -1272,7 +1271,7 @@ function CirclePayView({
   // Auto-transitions after payment success
   useEffect(() => {
     if (phase === "stop1-success") {
-      const t = setTimeout(() => setPhase("stop1-matched"), 1800)
+      const t = setTimeout(() => setPhase(mismatchMode ? "stop1-matched" : "stop1-add-to-circle"), 1800)
       return () => clearTimeout(t)
     }
     if (phase === "stop2-success") {
@@ -1301,17 +1300,6 @@ function CirclePayView({
             <p className={`text-base font-extrabold ${spendColor}`}>S${fmt(outingTotal)}</p>
             <p className={`text-[10px] font-semibold ${spendColor}`}>{spendMsg}</p>
           </div>
-        </div>
-      </div>
-    )
-  }
-
-  function ProtoQr() {
-    return (
-      <div className="relative mx-auto flex h-52 w-52 items-center justify-center overflow-hidden rounded-2xl border-4 border-nets-navy bg-white shadow-xl">
-        <QrCode className="h-44 w-44 text-nets-navy" strokeWidth={0.65} />
-        <div className="absolute inset-x-0 bottom-0 bg-nets-red py-1 text-center">
-          <span className="text-[8px] font-extrabold uppercase tracking-widest text-white">Prototype · Not for live payment</span>
         </div>
       </div>
     )
@@ -1703,7 +1691,11 @@ function CirclePayView({
             <div className="mb-4 rounded-2xl border border-border bg-nets-navy/5 p-4">
               <div className="flex justify-between text-sm mb-2">
                 <span className="text-muted-foreground">Payment amount</span>
-                <span className="text-xl font-extrabold text-nets-navy">S${fmt(lockedDinnerAmt)}</span>
+                <span className="text-xl font-extrabold text-nets-navy">S${fmt(groupDinnerTotal)}</span>
+              </div>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-muted-foreground text-[11px]">Covers full group ({circle.members.length} members)</span>
+                <span className="text-[11px] text-muted-foreground">Your share: S${fmt(lockedDinnerAmt)}</span>
               </div>
               <div className="flex justify-between text-sm mb-2">
                 <span className="text-muted-foreground">Payment method</span>
@@ -1719,7 +1711,7 @@ function CirclePayView({
           <div className="absolute bottom-6 left-5 right-5">
             <button onClick={() => setPhase("stop1-confirm")}
               className="flex w-full items-center justify-center gap-2 rounded-full bg-nets-red py-4 text-base font-bold text-white shadow-lg active:opacity-80">
-              Pay S${fmt(lockedDinnerAmt)}
+              Pay S${fmt(groupDinnerTotal)}
             </button>
           </div>
         </>
@@ -1743,8 +1735,9 @@ function CirclePayView({
               <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-nets-red/10">
                 <CreditCard className="h-8 w-8 text-nets-red" />
               </div>
-              <p className="text-3xl font-extrabold text-nets-navy">S${fmt(lockedDinnerAmt)}</p>
+              <p className="text-3xl font-extrabold text-nets-navy">S${fmt(groupDinnerTotal)}</p>
               <p className="mt-1 text-sm text-muted-foreground">to Seoul Table</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Full group · {circle.members.length} members</p>
             </div>
 
             <div className="mb-6 overflow-hidden rounded-2xl border border-border">
@@ -1754,7 +1747,7 @@ function CirclePayView({
               </div>
               <div className="flex justify-between px-4 py-3 border-b border-border">
                 <span className="text-sm text-muted-foreground">Amount</span>
-                <span className="text-sm font-bold text-nets-navy">S${fmt(lockedDinnerAmt)}</span>
+                <span className="text-sm font-bold text-nets-navy">S${fmt(groupDinnerTotal)}</span>
               </div>
               <div className="flex justify-between px-4 py-3 border-b border-border">
                 <span className="text-sm text-muted-foreground">Payment method</span>
@@ -1788,7 +1781,7 @@ function CirclePayView({
             <Check className="h-12 w-12 text-white" />
           </motion.div>
           <h2 className="text-2xl font-extrabold text-nets-navy">Payment Successful ✓</h2>
-          <p className="mt-2 text-sm text-muted-foreground">S${fmt(lockedDinnerAmt)} · Seoul Table</p>
+          <p className="mt-2 text-sm text-muted-foreground">S${fmt(groupDinnerTotal)} · Seoul Table</p>
           <div className="mt-4 rounded-2xl bg-nets-navy/5 px-4 py-3 text-left w-full max-w-xs">
             <p className="text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground mb-2">Simulated NETS Payment Event</p>
             <div className="flex justify-between text-xs mb-1">
@@ -1797,65 +1790,87 @@ function CirclePayView({
             </div>
             <div className="flex justify-between text-xs mb-1">
               <span className="text-muted-foreground">Amount</span>
-              <span className="font-semibold text-nets-navy">S${fmt(lockedDinnerAmt)}</span>
+              <span className="font-semibold text-nets-navy">S${fmt(groupDinnerTotal)}</span>
             </div>
             <div className="flex justify-between text-xs">
               <span className="text-muted-foreground">Ref</span>
               <span className="font-mono text-xs text-nets-navy">{dinnerTxnRef}</span>
             </div>
           </div>
-          <p className="mt-4 text-xs text-muted-foreground">Detecting payment match…</p>
+          <p className="mt-4 text-xs text-muted-foreground">Redirecting…</p>
         </div>
       )}
 
-      {/* ── STOP 1: PAYMENT MATCHED ───────────────────────────────────────────── */}
-      {phase === "stop1-matched" && !mismatchMode && (
+      {/* ── STOP 1: ADD TO CIRCLE LEDGER ─────────────────────────────────────── */}
+      {phase === "stop1-add-to-circle" && (
         <>
-          <div className="bg-nets-green text-white">
-            <StatusBar dark />
-            <div className="px-5 pb-3 pt-2">
-              <p className="text-xs font-bold uppercase tracking-wide text-white/70">Payment Detected</p>
+          <div className="bg-white">
+            <StatusBar />
+            <div className="flex items-center gap-3 px-5 pb-3 pt-1">
+              <div>
+                <p className="font-bold text-nets-navy">Add to Circle Ledger</p>
+                <p className="text-xs text-muted-foreground">Seoul Table · {circle.name}</p>
+              </div>
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto bg-nets-page px-5 pb-32 pt-5">
             <motion.div initial={{ y: 16, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }}
               className="mb-4 rounded-3xl bg-white p-5 shadow-sm border border-border">
-              <div className="mb-4 flex justify-between text-sm">
-                <span className="text-muted-foreground">NETS Payment</span>
-                <span className="text-lg font-extrabold text-nets-navy">S${fmt(groupDinnerTotal)}</span>
+              <div className="mb-3 flex items-center gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-nets-navy text-white font-extrabold text-sm">ST</div>
+                <div>
+                  <p className="font-bold text-nets-navy">Seoul Table — Korean BBQ Dinner</p>
+                  <p className="text-xs text-muted-foreground">Paid by you · {circle.name}</p>
+                </div>
               </div>
-              <div className="mb-4 flex justify-between text-sm">
-                <span className="text-muted-foreground">Locked Circle Cart</span>
-                <span className="text-lg font-extrabold text-nets-navy">S${fmt(groupDinnerTotal)}</span>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-muted-foreground">Group total paid</span>
+                <span className="text-xl font-extrabold text-nets-navy">S${fmt(groupDinnerTotal)}</span>
               </div>
-              <div className="flex items-center justify-center gap-2 rounded-2xl bg-nets-green py-3">
-                <Check className="h-5 w-5 text-white" />
-                <span className="text-base font-extrabold text-white">MATCHED ✓</span>
+              <div className="flex justify-between text-xs text-muted-foreground mb-3">
+                <span>{circle.members.length} members · your share</span>
+                <span className="font-semibold">S${fmt(lockedDinnerAmt)}</span>
+              </div>
+              <div className="rounded-xl bg-nets-navy/5 px-3 py-2">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Transaction Reference</p>
+                <p className="font-mono text-xs text-nets-navy">{dinnerTxnRef}</p>
               </div>
             </motion.div>
 
-            <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.25 }}
-              className="mb-4 rounded-2xl bg-nets-green/10 border border-nets-green/20 p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Check className="h-4 w-4 text-nets-green" />
-                <p className="text-sm font-bold text-nets-navy">Added to {circle.name}</p>
+            <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}
+              className="mb-4 rounded-2xl bg-nets-blue/10 border border-nets-blue/20 p-4">
+              <p className="text-sm font-bold text-nets-navy mb-1">Adding to Circle will:</p>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Check className="h-3.5 w-3.5 text-nets-green shrink-0" />
+                  <span>Record S${fmt(groupDinnerTotal)} paid by you for the group</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Check className="h-3.5 w-3.5 text-nets-green shrink-0" />
+                  <span>Split the cost equally among all {circle.members.length} members</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Check className="h-3.5 w-3.5 text-nets-green shrink-0" />
+                  <span>Track who owes you what for settlement later</span>
+                </div>
               </div>
-              <p className="text-xs text-muted-foreground">Your dinner payment has been recorded in the Circle ledger. No manual entry needed.</p>
             </motion.div>
 
-            <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.35 }}
-              className="rounded-2xl bg-card p-3 shadow-sm">
-              <p className="text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground mb-2">Transaction Reference</p>
-              <p className="font-mono text-xs text-nets-navy">{dinnerTxnRef}</p>
-              <p className="mt-1 text-[10px] text-muted-foreground">Prototype simulation only. No real payment has been processed.</p>
-            </motion.div>
+            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
+              className="text-center text-[11px] text-muted-foreground px-4">
+              Prototype simulation only. No real payment has been processed.
+            </motion.p>
           </div>
 
           <div className="absolute bottom-6 left-5 right-5">
-            <button onClick={() => setPhase("stop1-done")}
+            <button onClick={() => {
+              const now = new Date().toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit" })
+              onAddExpense({ title: "Seoul Table — Korean BBQ Dinner", merchant: "Seoul Table", category: "Food", amount: groupDinnerTotal, paidById: "thanis", participants: circle.members.map(m => m.id), time: now }, true)
+              setPhase("stop1-done")
+            }}
               className="flex w-full items-center justify-center gap-2 rounded-full bg-nets-navy py-4 text-base font-bold text-white shadow-lg active:opacity-80">
-              Next stop — Arcade <ArrowRight className="h-5 w-5" />
+              <Check className="h-5 w-5" /> Add to Circle Ledger
             </button>
           </div>
         </>
@@ -2197,7 +2212,7 @@ function CirclePayView({
           </div>
 
           <div className="absolute bottom-6 left-5 right-5">
-            <button onClick={() => setPhase("stop2-confirm")}
+            <button onClick={() => setPhase("stop2-qr")}
               className="flex w-full items-center justify-center gap-2 rounded-full bg-nets-red py-4 text-base font-bold text-white shadow-lg active:opacity-80">
               <QrCode className="h-5 w-5" /> Pay S${fmt(ARCADE_COST)} with NETS
             </button>
@@ -3481,23 +3496,34 @@ type CloseBalance = {
 
 function computeCloseBalances(circle: Circle): CloseBalance[] {
   const memberMap = new Map(circle.members.map(m => [m.id, m]))
-  const memberBalances = computeBalancesFromExpenses(circle)
+  const pairwise = computeBalancesFromExpenses(circle)
 
-  return memberBalances.map((mb, idx) => {
-    const fromMember = memberMap.get(mb.fromId)
-    const toMember = memberMap.get(mb.toId)
+  return pairwise.map((b, idx) => {
+    const fromMember = memberMap.get(b.fromId)
+    const toMember = memberMap.get(b.toId)
     return {
       id: `balance-${idx}`,
-      fromId: mb.fromId,
-      fromName: fromMember?.name ?? mb.fromId,
+      fromId: b.fromId,
+      fromName: fromMember?.name ?? b.fromId,
       fromInitial: fromMember?.initial ?? "?",
       fromColor: fromMember?.color ?? "var(--nets-navy)",
-      toId: mb.toId,
-      toName: toMember?.name ?? mb.toId,
-      amount: mb.amount,
+      toId: b.toId,
+      toName: toMember?.name ?? b.toId,
+      amount: b.amount,
       status: "pending" as const
     }
   })
+}
+
+function ProtoQr() {
+  return (
+    <div className="relative mx-auto flex h-52 w-52 items-center justify-center overflow-hidden rounded-2xl border-4 border-nets-navy bg-white shadow-xl">
+      <QrCode className="h-44 w-44 text-nets-navy" strokeWidth={0.65} />
+      <div className="absolute inset-x-0 bottom-0 bg-nets-red py-1 text-center">
+        <span className="text-[8px] font-extrabold uppercase tracking-widest text-white">Prototype · Not for live payment</span>
+      </div>
+    </div>
+  )
 }
 
 // PayNow QR — a static placeholder representing Thanis' saved receiving QR.
@@ -3708,7 +3734,40 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 pb-32 pt-2">
-            <p className="mb-4 text-sm text-muted-foreground">Circle worked out what's left.</p>
+            {/* Total paid summary */}
+            {(() => {
+              const totalPaid = circle.expenses.reduce((s, e) => s + e.amount, 0)
+              const myPaid = circle.expenses.filter(e => e.paidById === "thanis").reduce((s, e) => s + e.amount, 0)
+              const pendingOwed = balances.filter(b => b.toId === "thanis" && b.status === "pending").reduce((s, b) => s + b.amount, 0)
+              return (
+                <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                  className="mb-4 rounded-3xl bg-nets-navy p-4 text-white">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-white/60 mb-2">Total Paid · {circle.name}</p>
+                  <div className="flex justify-between items-end mb-3">
+                    <div>
+                      <p className="text-3xl font-extrabold">S${fmt(totalPaid)}</p>
+                      <p className="text-xs text-white/60 mt-0.5">across {circle.members.length} members</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-nets-green">S${fmt(totalPaid / circle.members.length)}</p>
+                      <p className="text-[10px] text-white/60">per person</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 border-t border-white/10 pt-3">
+                    <div>
+                      <p className="text-[10px] text-white/50">You paid out</p>
+                      <p className="text-sm font-bold">{myPaid > 0 ? `S${fmt(myPaid)}` : "—"}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] text-white/50">Still owed to you</p>
+                      <p className={`text-sm font-bold ${pendingOwed > 0 ? "text-nets-green" : "text-white/40"}`}>{pendingOwed > 0 ? `S${fmt(pendingOwed)}` : "All settled"}</p>
+                    </div>
+                  </div>
+                </motion.div>
+              )
+            })()}
+
+            <p className="mb-3 text-sm text-muted-foreground">Circle worked out what's left — {balances.length} transfer{balances.length !== 1 ? "s" : ""} needed.</p>
 
             {/* Balance list */}
             <div className="space-y-3">
@@ -3718,6 +3777,8 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
                 const isNrWaiting = b.status === "nr-waiting"
                 const isWaiting = b.status === "waiting-confirm"
                 const isOutstanding = b.status === "outstanding"
+                const iAmCreditor = b.toId === "thanis"
+                const iAmDebtor = b.fromId === "thanis"
                 return (
                   <motion.div key={b.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
                     className={`rounded-3xl p-4 shadow-sm ${isSettled ? "bg-nets-green/10 border border-nets-green/20" : isNrAccepted ? "bg-amber-50 border border-amber-200" : isNrWaiting ? "bg-amber-50/60 border border-amber-100" : isWaiting ? "bg-blue-50 border border-blue-200" : isOutstanding ? "bg-red-50 border border-red-200" : "bg-card"}`}>
@@ -3725,7 +3786,7 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-extrabold text-white" style={{ backgroundColor: b.fromColor }}>{b.fromInitial}</span>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-nets-navy">
-                          {b.fromName} owes {b.toName === "Thanis" ? "you" : b.toName}
+                          {b.fromId === "thanis" ? "You" : b.fromName} owe{b.fromId === "thanis" ? "" : "s"} {b.toId === "thanis" ? "you" : b.toName}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {isSettled ? "Settled ✓" : isNrAccepted ? "Next Round confirmed ✓" : isNrWaiting ? "Next Round — waiting for response" : isWaiting ? "Waiting for confirmation" : isOutstanding ? "Not yet received" : b.amount <= NEXT_ROUND_THRESHOLD ? "Pending · Next Round eligible" : "Pending"}
@@ -3736,33 +3797,57 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
                       </span>
                     </div>
 
-                    {/* Actions — only for balances where Thanis is the payer */}
-                    {b.fromId === "thanis" && !isSettled && !isNrAccepted && (
+                    {/* Actions for Thanis as debtor — pay via NETS QR */}
+                    {iAmDebtor && !isSettled && !isNrAccepted && (
                       <div className="mt-3 flex gap-2">
                         <button onClick={() => openSettleQr(b)}
-                          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-nets-navy py-2.5 text-sm font-bold text-white active:opacity-80">
-                          <QrCode className="h-4 w-4" /> Settle Now
+                          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-nets-red py-2.5 text-sm font-bold text-white active:opacity-80">
+                          <QrCode className="h-4 w-4" /> Pay with NETS QR
                         </button>
                       </div>
                     )}
 
-                    {/* Show "Awaiting payment" when Thanis is the creditor */}
-                    {b.toId === "thanis" && !isSettled && !isNrAccepted && !isWaiting && (
-                      <div className="mt-3 flex gap-2">
-                        {b.amount <= NEXT_ROUND_THRESHOLD && (
+                    {/* Actions for Thanis as creditor — Request NETS QR or Next Round */}
+                    {iAmCreditor && !isSettled && !isNrAccepted && !isWaiting && (
+                      <div className="mt-3 space-y-2">
+                        <div className="flex gap-2">
+                          <button onClick={() => openSettleQr(b)}
+                            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-nets-navy py-2.5 text-xs font-bold text-white active:opacity-80">
+                            <QrCode className="h-4 w-4" /> Request via NETS QR
+                          </button>
+                          {b.amount <= NEXT_ROUND_THRESHOLD && (
+                            <button onClick={() => openNrRequest(b)}
+                              className="flex items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-700 active:opacity-80">
+                              <ArrowRight className="h-4 w-4" /> Next Round
+                            </button>
+                          )}
+                        </div>
+                        {b.amount > NEXT_ROUND_THRESHOLD && (
                           <button onClick={() => openNrRequest(b)}
-                            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 py-2.5 text-sm font-bold text-amber-700 active:opacity-80">
+                            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 py-2.5 text-sm font-bold text-amber-700 active:opacity-80">
                             <ArrowRight className="h-4 w-4" /> Next Round
                           </button>
                         )}
-                        <span className="flex flex-1 items-center justify-center text-sm font-semibold text-muted-foreground py-2.5">
-                          Awaiting payment
-                        </span>
+                        <p className="text-center text-[11px] text-muted-foreground">Awaiting payment</p>
                       </div>
                     )}
 
-                    {/* Q&A only: future settlement demo — subtle, outside default path */}
-                    {b.fromId === "thanis" && (b.status === "pending" || b.status === "outstanding") && (
+                    {/* Waiting state for creditor */}
+                    {iAmCreditor && isWaiting && (
+                      <div className="mt-3 space-y-2">
+                        <div className="flex items-center gap-1.5 rounded-xl bg-blue-50 px-3 py-2">
+                          <div className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
+                          <span className="text-xs font-semibold text-blue-600">Waiting for {b.fromName} to confirm…</span>
+                        </div>
+                        <button onClick={() => { setActiveBalanceId(b.id); setRecipientView(true); setScreen("settle-waiting") }}
+                          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-white py-2 text-xs font-semibold text-blue-600 active:opacity-70">
+                          <Smartphone className="h-3 w-3" /> Demo: View as {b.fromName} (confirm)
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Q&A only: future settlement demo */}
+                    {iAmDebtor && (b.status === "pending" || b.status === "outstanding") && (
                       <button onClick={() => openFutureSettle(b)}
                         className="mt-1.5 flex w-full items-center justify-center gap-1 py-1 text-[10px] font-semibold text-muted-foreground/50 active:opacity-70">
                         <Info className="h-2.5 w-2.5" /> Q&A: Future seamless settlement demo
@@ -3770,15 +3855,15 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
                     )}
 
                     {/* Demo: simulate creditor response for NR-waiting */}
-                    {b.fromId === "thanis" && isNrWaiting && (
+                    {iAmDebtor && isNrWaiting && (
                       <button onClick={() => { setActiveBalanceId(b.id); setScreen("nr-recipient") }}
                         className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 py-2 text-xs font-semibold text-amber-600 active:opacity-70">
                         <Smartphone className="h-3 w-3" /> Demo: View as {b.toName} (respond)
                       </button>
                     )}
 
-                    {/* Recipient demo trigger for PayNow-waiting balances */}
-                    {b.fromId === "thanis" && isWaiting && (
+                    {/* Demo: simulate recipient confirm for PayNow-waiting */}
+                    {iAmDebtor && isWaiting && (
                       <button onClick={() => { setActiveBalanceId(b.id); setRecipientView(true); setScreen("settle-waiting") }}
                         className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-white py-2 text-xs font-semibold text-blue-600 active:opacity-70">
                         <Smartphone className="h-3 w-3" /> Demo: View as {b.toName} (confirm)
@@ -3789,7 +3874,14 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
               })}
             </div>
 
-            {/* Settle Now always reachable note */}
+            {balances.length === 0 && (
+              <div className="rounded-3xl bg-nets-green/10 border border-nets-green/20 p-6 text-center">
+                <Check className="h-8 w-8 text-nets-green mx-auto mb-2" />
+                <p className="font-bold text-nets-green">Everyone is square!</p>
+                <p className="text-xs text-muted-foreground mt-1">No transfers needed.</p>
+              </div>
+            )}
+
             {waitingCount > 0 && (
               <p className="mt-4 text-center text-xs text-muted-foreground px-2">
                 Settle Now is still available for all pending balances.
@@ -3808,63 +3900,67 @@ function CircleSettle({ circle, onBack, onDone }: { circle: Circle; onBack: () =
         </>
       )}
 
-      {/* ── SETTLE: PAY NOW QR ── */}
-      {screen === "settle-qr" && active && (
-        <>
-          <div className="bg-white">
-            <StatusBar />
-            <div className="flex items-center gap-3 px-5 pb-3 pt-1">
-              <button onClick={() => setScreen("home")} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-nets-navy/10 active:opacity-70">
-                <ChevronLeft className="h-5 w-5 text-nets-navy" />
-              </button>
-              <div>
-                <p className="font-bold text-nets-navy">Pay {active.toName}</p>
-                <p className="text-xs text-muted-foreground">{active.fromName} → {active.toName}</p>
+      {/* ── SETTLE: PAY NOW QR (debtor) / NETS QR REQUEST (creditor) ── */}
+      {screen === "settle-qr" && active && (() => {
+        const isCreditorView = active.toId === "thanis"
+        return (
+          <>
+            <div className="bg-white">
+              <StatusBar />
+              <div className="flex items-center gap-3 px-5 pb-3 pt-1">
+                <button onClick={() => setScreen("home")} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-nets-navy/10 active:opacity-70">
+                  <ChevronLeft className="h-5 w-5 text-nets-navy" />
+                </button>
+                <div>
+                  <p className="font-bold text-nets-navy">{isCreditorView ? `Collect from ${active.fromName}` : `Pay ${active.toName}`}</p>
+                  <p className="text-xs text-muted-foreground">{active.fromName} → {active.toName}</p>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="flex-1 overflow-y-auto bg-white px-5 pb-32 pt-4">
-            <div className="mb-5 flex flex-col items-center text-center">
-              <p className="mb-1 text-3xl font-extrabold text-nets-navy">S${fmt(active.amount)}</p>
-              <p className="text-sm text-muted-foreground">to {active.toName}</p>
+            <div className="flex-1 overflow-y-auto bg-white px-5 pb-32 pt-4">
+              <div className="mb-5 flex flex-col items-center text-center">
+                <p className="mb-1 text-3xl font-extrabold text-nets-navy">S${fmt(active.amount)}</p>
+                <p className="text-sm text-muted-foreground">{isCreditorView ? `from ${active.fromName}` : `to ${active.toName}`}</p>
+              </div>
+
+              <div className="mb-5 flex flex-col items-center gap-4">
+                {isCreditorView ? <ProtoQr /> : <PayNowQr name={active.toName} />}
+                {!isCreditorView && (
+                  <button onClick={() => downloadPayNowQr(active.toName, active.amount)}
+                    className="flex items-center gap-2 rounded-xl border border-nets-navy/20 bg-nets-navy/5 px-4 py-2 text-sm font-semibold text-nets-navy active:opacity-70">
+                    <Download className="h-4 w-4" /> Download QR
+                  </button>
+                )}
+              </div>
+
+              <div className="mb-5 rounded-2xl bg-nets-navy/5 p-4 space-y-2">
+                <p className="text-xs font-extrabold uppercase tracking-wide text-muted-foreground mb-3">{isCreditorView ? "How to collect" : "How to pay"}</p>
+                {(isCreditorView
+                  ? [`Show this NETS QR to ${active.fromName}`, `${active.fromName} scans and pays S$${fmt(active.amount)}`, "Confirm when payment arrives"]
+                  : ["Open your banking app", `Scan or upload this PayNow QR`, `Pay S$${fmt(active.amount)}`]
+                ).map((step, i) => (
+                  <div key={i} className="flex items-start gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-nets-navy text-xs font-bold text-white">{i + 1}</span>
+                    <p className="text-sm text-nets-navy">{step}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+                <p className="text-xs text-amber-700">Circle facilitates the split — the actual transfer happens in your banking app. Circle cannot verify the payment automatically.</p>
+              </div>
             </div>
 
-            <div className="mb-5 flex flex-col items-center gap-4">
-              <PayNowQr name={active.toName} />
-              <button onClick={() => downloadPayNowQr(active.toName, active.amount)}
-                className="flex items-center gap-2 rounded-xl border border-nets-navy/20 bg-nets-navy/5 px-4 py-2 text-sm font-semibold text-nets-navy active:opacity-70">
-                <Download className="h-4 w-4" /> Download QR
+            <div className="absolute bottom-0 inset-x-0 border-t border-border bg-white px-5 pb-8 pt-3">
+              <button onClick={isCreditorView ? recipientConfirm : senderSentPayment}
+                className="w-full rounded-2xl bg-nets-navy py-4 text-base font-bold text-white shadow-lg active:opacity-80">
+                {isCreditorView ? "Payment Received" : "Payment Sent"}
               </button>
             </div>
-
-            <div className="mb-5 rounded-2xl bg-nets-navy/5 p-4 space-y-2">
-              <p className="text-xs font-extrabold uppercase tracking-wide text-muted-foreground mb-3">How to pay</p>
-              {[
-                "Open your banking app",
-                `Scan or upload this PayNow QR`,
-                `Pay S$${fmt(active.amount)}`,
-              ].map((step, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-nets-navy text-xs font-bold text-white">{i + 1}</span>
-                  <p className="text-sm text-nets-navy">{step}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
-              <p className="text-xs text-amber-700">Circle facilitates the split — the actual transfer happens in your banking app. Circle cannot verify the payment automatically.</p>
-            </div>
-          </div>
-
-          <div className="absolute bottom-0 inset-x-0 border-t border-border bg-white px-5 pb-8 pt-3">
-            <button onClick={senderSentPayment}
-              className="w-full rounded-2xl bg-nets-navy py-4 text-base font-bold text-white shadow-lg active:opacity-80">
-              Payment Sent
-            </button>
-          </div>
-        </>
-      )}
+          </>
+        )
+      })()}
 
       {/* ── SETTLE: WAITING FOR RECIPIENT ── */}
       {screen === "settle-waiting" && active && !recipientView && (

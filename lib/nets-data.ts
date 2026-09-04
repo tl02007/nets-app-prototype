@@ -252,7 +252,7 @@ export type NETSPaymentEvent = { id: string; circleId: string; memberId: string;
 export type SharedExpense = { id: string; circleId: string; title: string; merchant: string; totalAmount: number; splitAmong: string[]; paidById: string; category: string; timestamp: string }
 // Next Round is an agreed outstanding balance carried into a future Circle.
 // It is NOT a transfer, loan, or stored value — just a social commitment between friends.
-export const NEXT_ROUND_THRESHOLD = 20   // S$ max eligible for Next Round
+export const NEXT_ROUND_THRESHOLD = 50   // S$ max eligible for Next Round
 
 export type NextRoundRequest = {
   id: string
@@ -511,6 +511,44 @@ export function perHead(c: Circle) {
 }
 
 export type Settlement = { fromId: string; toId: string; amount: number }
+
+// Compute minimum-transfer settlements from actual expense records (debt compression).
+// Builds each member's net position from expenses, then uses a greedy creditor/debtor
+// algorithm to reduce N*(N-1) possible transfers down to at most N-1.
+export function computeCompressedSettlements(c: Circle): Settlement[] {
+  const net: Record<string, number> = {}
+  for (const m of c.members) net[m.id] = 0
+
+  for (const exp of c.expenses) {
+    const participants = exp.participants?.length ? exp.participants : c.members.map(m => m.id)
+    const perPerson = exp.amount / participants.length
+    net[exp.paidById] = (net[exp.paidById] ?? 0) + exp.amount
+    for (const p of participants) {
+      net[p] = (net[p] ?? 0) - perPerson
+    }
+  }
+
+  const debtors = Object.entries(net)
+    .filter(([, v]) => v < -0.005)
+    .map(([id, v]) => ({ id, bal: v }))
+    .sort((a, b) => a.bal - b.bal)
+  const creditors = Object.entries(net)
+    .filter(([, v]) => v > 0.005)
+    .map(([id, v]) => ({ id, bal: v }))
+    .sort((a, b) => b.bal - a.bal)
+
+  const res: Settlement[] = []
+  let i = 0, j = 0
+  while (i < debtors.length && j < creditors.length) {
+    const owe = Math.min(-debtors[i].bal, creditors[j].bal)
+    res.push({ fromId: debtors[i].id, toId: creditors[j].id, amount: parseFloat(owe.toFixed(2)) })
+    debtors[i].bal += owe
+    creditors[j].bal -= owe
+    if (Math.abs(debtors[i].bal) < 0.005) i++
+    if (Math.abs(creditors[j].bal) < 0.005) j++
+  }
+  return res
+}
 
 export function computeSettlements(c: Circle): Settlement[] {
   const share = perHead(c)
